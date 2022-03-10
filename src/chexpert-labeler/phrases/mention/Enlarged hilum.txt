@@ -1,0 +1,8 @@
+hilar enlargement
+hilar adenopathy
+enlarged[a-zA-Z \-]+hilum
+lymphadenopathy
+hilar lymph nodes
+enlarged[a-zA-Z \-]+vessels
+hilar mass
+enlarged central pulmonary arteries

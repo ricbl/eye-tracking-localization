@@ -1,0 +1,6 @@
+hazy[a-zA-Z \-]+opac
+ground glass opaci
+groundglass opaci
+ground-glass opaci
+nodular[a-zA-Z \-]+opac
+reticular[a-zA-Z \-]+opac

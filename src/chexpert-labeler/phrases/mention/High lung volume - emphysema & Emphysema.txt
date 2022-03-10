@@ -1,0 +1,8 @@
+high lung volume
+emphysema
+flat
+copd
+hyperinflat
+bullae
+hyperexpansion
+flat[a-zA-Z \-]+diaphragm

@@ -1,0 +1,2 @@
+chronic[a-zA-Z \-]+fracture
+old[a-zA-Z \-]+fracture

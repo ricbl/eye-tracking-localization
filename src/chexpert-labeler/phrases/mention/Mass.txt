@@ -1,0 +1,8 @@
+mass
+lump
+cavitary lesion
+carcinoma
+neoplasm
+tumor
+density
+pulmonary metastasis

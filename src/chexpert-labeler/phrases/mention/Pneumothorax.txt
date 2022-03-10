@@ -1,0 +1,4 @@
+pneumothorax
+pneumothoraces
+pleural space air
+air[a-zA-Z \-]+pleural space

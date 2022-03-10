@@ -1,0 +1,8 @@
+hazy[a-zA-Z \-]+opac
+ground glass opaci
+groundglass opaci
+ground-glass opaci
+patchy[a-zA-Z \-]+opac
+nodular[a-zA-Z \-]+opac
+reticular[a-zA-Z \-]+opac
+subsegmental atelectasis

@@ -1,0 +1,13 @@
+edema
+heart failure
+chf
+vascular congestion
+pulmonary congestion
+indistinctness
+vascular prominence
+bronchial cuffing
+interstitial marking
+cephalization
+airway wall thickening
+bronchial thickening
+reticular[a-zA-Z \-]+opac

@@ -1,0 +1,8 @@
+atelecta
+collapse
+opaci
+scar
+parenchymal scarring
+density
+volume loss
+parenchymal[a-zA-Z \-]+opac

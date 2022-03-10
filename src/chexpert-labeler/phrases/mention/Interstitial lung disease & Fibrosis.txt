@@ -1,0 +1,12 @@
+sarcoidosis
+pneumoconiosis
+fibrosis
+interstitial
+diffuse lung disease
+interstitial marking
+interstitial pattern
+interstitial lung
+reticular pattern
+reticular marking
+reticulation
+reticular[a-zA-Z \-]+opac

@@ -1,0 +1,4 @@
+pleural fluid
+effusion
+blunt
+pleural[a-zA-Z \-]+opac

@@ -1,0 +1,12 @@
+hazy[a-zA-Z \-]+opac
+patchy[a-zA-Z \-]+opac
+ground glass opaci
+groundglass opaci
+ground-glass opaci
+increased density
+airspace disease
+air-space disease
+air space disease
+density
+aspiration
+contusion
