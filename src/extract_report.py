@@ -1,6 +1,6 @@
 import csv
 from pathlib import Path
-from ..global_paths import metadata_et_location, eyetracking_dataset_path
+from .global_paths import metadata_et_location, eyetracking_dataset_path
 
 def load_ids(path):
     reval = []

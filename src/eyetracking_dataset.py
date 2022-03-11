@@ -4,7 +4,8 @@ from .utils_dataset import TransformsDataset, H5Dataset, LoadToMemory, SeedingPy
 from .eyetracking_object import ETDataset
 import pandas as pd
 import numpy as np
-from .global_path import h5_path
+from .global_paths import h5_path
+from .list_labels import list_labels
 
 normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                  std=[0.229, 0.224, 0.225])
@@ -62,8 +63,8 @@ def get_list_of_values_from_grid_for_histogram():
     for phase in [3]:
         a = H5Dataset(lambda: 
         LoadToMemory(
-                ETDataset('train',3) , parallel=True)
-            ,path = h5_path, filename = 'train_dataset_et_noseg', individual_datasets = True)
+                ETDataset('train',3, pre_transform_train) , parallel=True)
+            ,path = h5_path, filename = 'train_dataset_et_3_noseg', individual_datasets = True)
         for i in range(len(a)):
             d = a[i]
             e = DiscretizeET(16)(torch.tensor(d[2])).numpy().reshape([-1])
@@ -78,7 +79,6 @@ def get_list_of_values_from_grid_for_histogram():
 # get number of positive examples from each split
 def get_count_positive_labels(dataset):
     c=[]
-    dataset = get_dataset_et('test', 1, grid_size=16, use_et = True, use_data_aug = True, crop = False)
     for i in range(len(dataset)):
         b = dataset[i]
         c.append(b[1])
@@ -86,6 +86,7 @@ def get_count_positive_labels(dataset):
 
 if __name__=='__main__':
     get_list_of_values_from_grid_for_histogram()
+    print(list_labels)
     dataset = get_dataset_et('train', 1, grid_size=16, use_et = True, use_data_aug = True, crop = False)
     print('Train')
     print('Dataset size:')

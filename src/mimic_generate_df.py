@@ -1,6 +1,6 @@
 import pandas as pd
 import os
-from .global_path import jpg_path, mimic_dir
+from .global_paths import jpg_path, mimic_dir
 
 label_csv = os.path.join(mimic_dir + 'mimic-cxr-2.0.0-chexpert.csv')
 label_df = pd.read_csv(label_csv)

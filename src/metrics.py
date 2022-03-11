@@ -1,15 +1,16 @@
 import collections
 from sklearn.metrics import roc_auc_score
 import numpy as np
-from .list_label import list_labels as label_names
+from .list_labels import list_labels as label_names
 
 class Metrics():
-    def __init__(self, threshold_ior):
+    def __init__(self, threshold_ior, calculate_auc):
         self.values = collections.defaultdict(list)
         self.score_fn = roc_auc_score 
         self.registered_score = {}
         self.registered_iou = {}
         self.threshold_ior = threshold_ior
+        self.calculate_auc = calculate_auc
     
     def add_list(self, key, value):
         value = value.detach().cpu().tolist()
@@ -31,15 +32,16 @@ class Metrics():
             sum_values = sum(element)
             self.average[key] = sum_values/float(n_values)
         
-        for suffix in self.registered_score.keys():
-            y_true = np.array(self.values['y_true_' + suffix])
-            y_predicted = np.array( self.values['y_predicted_' + suffix])
-            auc_average = []
-            for i in range(y_true.shape[1]):
-                if (y_true[:,i]>0).any():
-                    self.average['score_' + label_names[i].replace(' ','_') + '_' + suffix] = self.score_fn(y_true[:,i], y_predicted[:,i])
-                    auc_average.append(self.average['score_' + label_names[i].replace(' ','_') + '_' + suffix])
-            self.average['auc_average_' + suffix] = sum(auc_average)/len(auc_average)
+        if self.calculate_auc:
+            for suffix in self.registered_score.keys():
+                y_true = np.array(self.values['y_true_' + suffix])
+                y_predicted = np.array( self.values['y_predicted_' + suffix])
+                auc_average = []
+                for i in range(y_true.shape[1]):
+                    if (y_true[:,i]>0).any():
+                        self.average['score_' + label_names[i].replace(' ','_') + '_' + suffix] = self.score_fn(y_true[:,i], y_predicted[:,i])
+                        auc_average.append(self.average['score_' + label_names[i].replace(' ','_') + '_' + suffix])
+                self.average['auc_average_' + suffix] = sum(auc_average)/len(auc_average)
         for suffix in self.registered_iou.keys():
             metric = np.array(self.values['iou_metric_' + suffix])
             consider = np.array( self.values['iou_consider_' + suffix])

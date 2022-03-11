@@ -10,7 +10,8 @@ import multiprocessing
 from joblib import Parallel, delayed
 from .mimic_object import MIMICCXRDataset
 from .eyetracking_dataset import get_dataset_et
-from .global_path import h5_path
+from .global_paths import h5_path
+from .list_labels import list_labels
 
 def get_train_val_dfs():
     train_df = pd.read_csv('./train_df.csv')
@@ -214,6 +215,7 @@ def get_count_positive_labels(dataset):
 
 if __name__=='__main__':
     dataset = get_dataset('train', 1, use_data_aug = False, crop = True)
+    print(list_labels)
     print('Train')
     print('Dataset size:')
     print(len(dataset))
@@ -224,6 +226,7 @@ if __name__=='__main__':
     print('Dataset size:')
     print(len(dataset))
     print('Count positive labels:')
+    get_count_positive_labels(dataset)
     dataset = get_dataset('test', 1, use_data_aug = False, crop = True)
     print('Test')
     print('Dataset size:')

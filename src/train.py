@@ -182,13 +182,15 @@ def main():
     opt = opts.get_opt()
     
     #load Outputs class to save metrics, images and models to disk
+    if not os.path.exists(opt.save_folder):
+        os.mkdir(opt.save_folder)
     output = outputs.Outputs(opt, opt.save_folder + '/' + opt.experiment + '_' + opt.timestamp)
     output.save_run_state(os.path.dirname(__file__))
     
     from .mimic_dataset import get_together_dataset as get_dataloaders
     
     #load class to store metrics and losses values
-    metric = metrics.Metrics(opt.threshold_ior)
+    metric = metrics.Metrics(opt.threshold_ior, opt.validate_auc)
     
     if opt.skip_train:
         loader_train = None

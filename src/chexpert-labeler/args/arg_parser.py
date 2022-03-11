@@ -20,23 +20,23 @@ class ArgParser(object):
 
         # Phrases
         parser.add_argument('--mention_phrases_dir',
-                            default='phrases/mention',
+                            default='./src/chexpert-labeler/phrases/mention',
                             help='Directory containing mention phrases for ' +
                                  'each observation.')
         parser.add_argument('--unmention_phrases_dir',
-                            default='phrases/unmention',
+                            default='./src/chexpert-labeler/phrases/unmention',
                             help='Directory containing unmention phrases ' +
                                  'for each observation.')
 
         # Rules
         parser.add_argument('--pre_negation_uncertainty_path',
-                            default='patterns/pre_negation_uncertainty.txt',
+                            default='./src/chexpert-labeler/patterns/pre_negation_uncertainty.txt',
                             help='Path to pre-negation uncertainty rules.')
         parser.add_argument('--negation_path',
-                            default='patterns/negation.txt',
+                            default='./src/chexpert-labeler/patterns/negation.txt',
                             help='Path to negation rules.')
         parser.add_argument('--post_negation_uncertainty_path',
-                            default='patterns/post_negation_uncertainty.txt',
+                            default='./src/chexpert-labeler/patterns/post_negation_uncertainty.txt',
                             help='Path to post-negation uncertainty rules.')
 
         # Output parameters.

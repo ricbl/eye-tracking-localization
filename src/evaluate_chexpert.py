@@ -2,7 +2,7 @@ import csv
 import json
 from sklearn.metrics import precision_score
 from sklearn.metrics import recall_score
-from ..global_paths import metadata_et_location
+from .global_paths import metadata_et_location
 
 label_translation = {"fracture": "acute fracture & fracture",
               "acute fracture": "acute fracture & fracture",
@@ -62,7 +62,6 @@ def load_pred(path, glabel2id):
     reval = []
     labels = []
     labels_ = []
-    print(path)
     with open(path) as csvfile:
         reader = csv.reader(csvfile)
         for i, row in enumerate(reader):
@@ -151,8 +150,8 @@ if __name__ == '__main__':
     label_indices = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 21, 22]
 
     gold_labels, glabel2id, ids = load_labels(path, label_indices)
-    checked_ids = load_ids('ids.txt')
-    path = f'phase_{phase}_reports.csv'
+    checked_ids = load_ids('ids_radiologist_validation_phases_1_and_2.txt')
+    path = f'labeled_reports_{phase}.csv'
     pred_labels, plabel2id = load_pred(path,glabel2id)
     text = load_text(path)
 

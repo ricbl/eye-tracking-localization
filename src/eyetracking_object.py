@@ -6,7 +6,7 @@ import imageio
 from torchvision import transforms
 from skimage.draw import ellipse
 from .list_labels import list_labels, translate_mimic_to_label, str_labels_mimic, translate_et_to_label
-from .global_path import jpg_path, path_chexpert_labels, mimic_dir, metadata_et_location
+from .global_paths import jpg_path, path_chexpert_labels, mimic_dir, metadata_et_location
 
 def pre_process_path(dicom_path):
     temp_path = jpg_path + '/files/' + dicom_path.split('files')[-1]

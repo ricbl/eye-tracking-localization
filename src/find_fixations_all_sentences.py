@@ -13,7 +13,8 @@ import torch
 from .eyetracking_object import ETDataset
 from .eyetracking_dataset import pre_transform_train
 import os
-from .global_path import jpg_path, mimic_dir, eyetracking_dataset_path
+from .global_paths import jpg_path, mimic_dir, eyetracking_dataset_path
+from .list_labels import translate_et_to_label
 
 def get_gaussian(y,x,sy,sx, sizey,sizex, shown_rects_image_space):
     mu = [y-shown_rects_image_space[1],x-shown_rects_image_space[0]]
@@ -73,17 +74,38 @@ def generate_et_heatmaps_for_one_image(trial, image_name,df_this_trial,data_fold
     total_uncut = 0
     total_cut = 0
     total_sentences = 0
-    for _, df_this_index_this_trial in df_this_trial.iterrows():
+    labeled_reports = pd.read_csv(f'labeled_reports_3.csv')
+    for index, df_this_index_this_trial in df_this_trial.iterrows():
         
         print('trial', trial, 'index_image', index_image)
         image_size_x = int(float(df_this_index_this_trial['image_size_x']))
         image_size_y = int(float(df_this_index_this_trial['image_size_y']))
         fixations = pd.read_csv(f'{data_folder}/{df_this_index_this_trial["id"]}/fixations.csv')
         transcription = pd.read_csv(f'{data_folder}/{df_this_index_this_trial["id"]}/timestamps_transcription.csv')
-        print(' '.join(transcription['word'].values))
-        
-        # check which words of the previous sentence previous sentence are close than 5 seconds to the start of the current sentence
-        print(transcription)
+        joined_trainscription = ' '.join(transcription['word'].values)
+        row_chexpert = labeled_reports.iloc[index]
+        if not row_chexpert['Reports'].replace('.',' .').replace(',',' ,') == joined_trainscription:
+            print(row_chexpert['Reports'].replace('.',' .').replace(',',' ,'))
+            print(joined_trainscription)
+        assert(row_chexpert['Reports'].replace('.',' .').replace(',',' ,') == joined_trainscription)
+        sentences_indices = set()
+        indices_stop = [index_char for index_char, char in enumerate(row_chexpert['Reports']) if char == '.']
+        for et_label in translate_et_to_label:
+                if f'{et_label.lower()}_location' in row_chexpert:
+                    if len(row_chexpert[f'{et_label.lower()}_location'])>2:
+                        for current_range in row_chexpert[f'{et_label.lower()}_location'].strip('][').replace('], [', '],[').split('],['):
+                            current_range = current_range.split(',')
+                            current_range = [int(item) for item in current_range]
+                            for index_sentence, index_stop in enumerate(indices_stop):
+                                if current_range[0]<index_stop:
+                                    current_sentence = index_sentence
+                                    break
+                            sentences_indices.add(current_sentence)
+        if get_image:
+            print(joined_trainscription)
+            
+            # check which words of the previous sentence previous sentence are close than 5 seconds to the start of the current sentence
+            print(transcription)
         
         full_sentence = ''
         new_sentence = True
@@ -110,22 +132,23 @@ def generate_et_heatmaps_for_one_image(trial, image_name,df_this_trial,data_fold
             full_sentence+= word
             this_sentence += word
             if word == '.':
-                if first_start_timestamp_previous>=first_start_timestamp-5:
-                    total_uncut +=1
-                else:
-                     total_cut +=1
-                total_sentences +=1
-                this_img = create_heatmap(fixations,image_size_x, image_size_y, max(first_start_timestamp-5, first_start_timestamp_previous), last_end_timestamp)
-                # this_img = create_heatmap(fixations,image_size_x, image_size_y, first_start_timestamp_previous, last_end_timestamp)
-                # this_img = create_heatmap(fixations,image_size_x, image_size_y, first_start_timestamp, last_end_timestamp)
-                
-                # Saving the array in npy format
-                info_dict = {'np_image': this_img, 'img_path': pre_process_path(image_name), 
-                            'trial': trial, 'id':df_this_index_this_trial["id"],'char_start':len_start, 'char_end':len(full_sentence)-2}
-                if not get_image:
-                    np.save(f'{folder_name}/{trial}_{index_image}_{index_sentence}', info_dict)
-                
-                # imageio.imwrite(f'{folder_name}/{trial}_{index_image}_{index_sentence}.png', this_img) # too slow; only for debug
+                if index_sentence in sentences_indices:
+                    if first_start_timestamp_previous>=first_start_timestamp-5:
+                        total_uncut +=1
+                    else:
+                         total_cut +=1
+                    total_sentences +=1
+                    this_img = create_heatmap(fixations,image_size_x, image_size_y, max(first_start_timestamp-5, first_start_timestamp_previous), last_end_timestamp)
+                    # this_img = create_heatmap(fixations,image_size_x, image_size_y, first_start_timestamp_previous, last_end_timestamp)
+                    # this_img = create_heatmap(fixations,image_size_x, image_size_y, first_start_timestamp, last_end_timestamp)
+                    
+                    # Saving the array in npy format
+                    info_dict = {'np_image': this_img, 'img_path': pre_process_path(image_name), 
+                                'trial': trial, 'id':df_this_index_this_trial["id"],'char_start':len_start, 'char_end':len(full_sentence)-2}
+                    if not get_image:
+                        np.save(f'{folder_name}/{trial}_{index_image}_{index_sentence}', info_dict)
+                    
+                    # imageio.imwrite(f'{folder_name}/{trial}_{index_image}_{index_sentence}.png', this_img) # too slow; only for debug
                 
                 new_sentence = True
                 sentences_dict.append({'index':index_sentence, 'sentence':this_sentence, 'timestamps':[first_start_timestamp, last_end_timestamp]})
@@ -137,9 +160,10 @@ def generate_et_heatmaps_for_one_image(trial, image_name,df_this_trial,data_fold
         with open(f'{data_folder}/{df_this_index_this_trial["id"]}/transcription.txt',mode='r') as transcription_txt:
             full_transcription = transcription_txt.read()
         if not get_image:
-            with open(f'{folder_name}/{trial}_{index_image}.txt', 'w') as convert_file:
-                convert_file.write(json.dumps(sentences_dict, sort_keys=True, indent=4))
-            shutil.copy(pre_process_path(image_name), f'{folder_name}/{trial}_{index_image}.png')
+            pass
+            # with open(f'{folder_name}/{trial}_{index_image}.txt', 'w') as convert_file:
+            #     convert_file.write(json.dumps(sentences_dict, sort_keys=True, indent=4))
+            # shutil.copy(pre_process_path(image_name), f'{folder_name}/{trial}_{index_image}.png')
         assert(full_transcription == full_sentence)
         index_image += 1
     if get_image:
@@ -207,7 +231,7 @@ def get_images_figure_1(index_trial=82):
     plt.axis('off')
     plt.savefig('./full_heatmap_example.png', bbox_inches='tight', pad_inches = 0)
     
-    a = ETDataset( 'train', 3, pre_transform_train, segment = False)
+    a = ETDataset( 'train', 3, pre_transform_train)
     
     with open('./val_mimicid.txt', 'r') as txt_val:
         all_val_ids = txt_val.read().splitlines() 
@@ -228,22 +252,6 @@ def get_images_figure_1(index_trial=82):
 
 #generates the heatmaps from all sentences beforehand, to speed up the loading of the dataset later
 def pregenerate_all_sentence_heatmaps():
-    # Phase 1
-    print('Starting Phase 1')
-    file_phase_1 = 'metadata_phase_1.csv'
-    
-    create_heatmaps(eyetracking_dataset_path ,file_phase_1, 
-                    folder_name='heatmaps_sentences_phase_1')
-
-    # Phase 2
-    print('Starting Phase 2')
-    file_phase_2 = 'metadata_phase_2.csv'
-    
-    create_heatmaps(eyetracking_dataset_path, file_phase_2,
-                          folder_name='heatmaps_sentences_phase_2')
-    
-    # ### Phase 3
-    print('Starting Phase 3')
     file_phase_3 = 'metadata_phase_3.csv'
     
     create_heatmaps(eyetracking_dataset_path, file_phase_3,
