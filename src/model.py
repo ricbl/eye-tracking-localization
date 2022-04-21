@@ -2,9 +2,6 @@
 import torch
 import torchvision
 import types
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
 
 # normalizes a batch of tensors according to mean and std
 def BatchNormalizeTensor(mean, std, tensor):

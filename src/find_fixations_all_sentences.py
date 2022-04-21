@@ -4,7 +4,6 @@
 import pandas as pd
 import numpy as np
 from scipy.stats import multivariate_normal
-import csv
 import pathlib
 from joblib import Parallel, delayed
 import matplotlib

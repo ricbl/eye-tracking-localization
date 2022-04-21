@@ -24,7 +24,7 @@ def draw_table_latex_per_label(table_filepath, column_name, table_write_path):
     df_iou = pd.read_csv(table_filepath)
     all_iou = {}
     #the setting reported in the paper were: unannotated, ellipse and ET data
-    settings = ['unannotated_baseline_', 'ellipses_baseline_', 'et_data_model_']
+    settings = ['unannotated_baseline', 'ellipses_baseline', 'et_data_model']
     for setting in settings:
         all_iou[setting] = defaultdict(list)
         df_iou_setting = df_iou[df_iou['setting']==setting]
@@ -92,7 +92,7 @@ get_table(folder_runs_test)
 get_auc(folder_runs_test)
 
 # get the iou from the test set, using the best thresholds as selected above
-get_iou(folder_runs_test, 'cam')
+get_iou(folder_runs_test, 'ellipse')
 
 # write the latex tables to txt files
 ious, settings = draw_table_latex_per_label('./iou_results.csv', 'iou', './Table4.txt')

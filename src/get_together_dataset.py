@@ -26,9 +26,9 @@ class JoinDatasetsAnotatedUnannotated(Dataset):
         # create a mapping from the index of an example of the joint dataset to the dataset it belongs to
         # and to the index that should be used to get that example from the original dataset
         for dataset_index in range(len(self.dataset_list)):
-            self.index_mapping[current_index:current_index+len(self.dataset_list[i]),0] = dataset_index # index 0 contains the dataset identifier
-            self.index_mapping[current_index:current_index+len(self.dataset_list[i]),1] = np.arange(len(self.dataset_list[i])) # index 1 contains the index for the __getitem__ function of the original dataset
-            current_index += len(self.dataset_list[i])
+            self.index_mapping[current_index:current_index+len(self.dataset_list[dataset_index]),0] = dataset_index # index 0 contains the dataset identifier
+            self.index_mapping[current_index:current_index+len(self.dataset_list[dataset_index]),1] = np.arange(len(self.dataset_list[dataset_index])) # index 1 contains the index for the __getitem__ function of the original dataset
+            current_index += len(self.dataset_list[dataset_index])
 
     def __len__(self):
         return self.len_

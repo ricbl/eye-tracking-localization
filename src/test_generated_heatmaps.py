@@ -3,20 +3,18 @@
 # This validation is performed using cases from Phase 1 and Phase 2, which do not intersect with the cases from Phase 3 used in the paper
 from argparse import Namespace
 from .eyetracking_object import ETDataset
-from .utils_dataset import JoinDatasets, H5Dataset, XRayResizerPadRound32
-import torchvision.transforms as transforms
+from .utils_dataset import JoinDatasets, H5Dataset
 from . import output as outputs
 from . import metrics
 from .table_summary_results import get_table
 from .iou_results import get_iou
 from .get_best_threshold_per_label import get_thresholds
 from .train import localization_score_fn
-from .utils_dataset import ToTensor1, ToNumpy
 import pathlib
 import os
 import torch
 from .find_fixations_all_sentences import create_heatmaps
-from .global_paths import  eyetracking_dataset_path, h5_path
+from .global_paths import  eyetracking_dataset_path
 from .eyetracking_dataset import get_h5_dataset
 from .eyetracking_dataset import pre_transform_train
 thresholds_iou = [0,0.001,0.01, 0.025,0.05,0.1,0.15,0.2,0.25,0.3,0.35,0.4,0.45,0.5,0.55,0.6,0.65,0.7,0.75,0.8,0.85,0.9,0.95, 0.975, 0.99, 0.999]
