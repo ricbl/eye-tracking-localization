@@ -16,6 +16,8 @@ import os
 from .global_paths import jpg_path, mimic_dir, eyetracking_dataset_path, preprocessed_heatmaps_location,path_chexpert_labels
 from .list_labels import translate_et_to_label
 
+create_for_all_sentences = False
+
 # function that rasterizes a Gaussian centered at x,y of axis-aligned standard deviation sx and sy
 # into an array of size sizex, sizey
 # It only draws the gaussian inside the area defined by shown_rects_image_space
@@ -44,9 +46,9 @@ def create_heatmap(sequence_table, size_x, size_y, sentence_start, sentence_end)
         
         shown_rects_image_space = [round(row['xmin_shown_from_image']) ,round(row['ymin_shown_from_image']),round(row['xmax_shown_from_image']),round(row['ymax_shown_from_image'])]
         gaussian = get_gaussian(row['y_position'],row['x_position'], row['angular_resolution_y_pixels_per_degree']*angle_circle, row['angular_resolution_x_pixels_per_degree']*angle_circle, size_y,size_x, shown_rects_image_space)
-        fixatio_start = max(row['timestamp_start_fixation'],sentence_start)
+        fixation_start = max(row['timestamp_start_fixation'],sentence_start)
         fixation_end = min(row['timestamp_end_fixation'],sentence_end)
-        amplitude_multiplier = fixatio_start - fixation_end
+        amplitude_multiplier = fixation_end - fixation_start
         img += gaussian*amplitude_multiplier
     # normalize heatmap to between 0 and 1
     return img/np.max(img)
@@ -131,7 +133,7 @@ def generate_et_heatmaps_for_one_image(phase, trial, image_name,df_this_trial,da
                 numpy_filename = f'{folder_name}/{trial}_{index_image}_{index_sentence}.npy'
                 
                 #only create heatmaps for sentences that contain mention of presence of a label
-                if index_sentence in sentences_indices:
+                if index_sentence in sentences_indices or create_for_all_sentences:
                     
                     #counting of how many heatmaps were calculated using the 5 second limit and how many were calculated using the "beginning of previous sentence" limit
                     if first_start_timestamp_previous>=first_start_timestamp-5:
