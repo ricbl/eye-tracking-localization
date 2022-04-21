@@ -1,3 +1,4 @@
+# script used to define inputs user can add to the command line calling of the training script, and a few other settings
 import argparse
 import time
 from random import randint
@@ -16,7 +17,7 @@ def str2bool(v):
         return False
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
-        
+
 def get_opt():
     parser = argparse.ArgumentParser(description='')
     
@@ -44,7 +45,7 @@ def get_opt():
                                 help='Changes the type of loss for training. The options are: ce, or li')
     parser.add_argument('--use_et', type=str2bool, nargs='?', default='true',
                                 help='If False, the ellipses ground truths are used as localiation annotation for training, instead of the eye-tracking data.')
-    parser.add_argument('--threshold_box_label', type=float, nargs='?', default=0.15,
+    parser.add_argument('--threshold_box_label', type=float, nargs='*', default=[0.15],
                                 help='The threshold used in the eye-tracking heatmap used as dataset annotation.')
     parser.add_argument('--use_lr_scheduler', type=str2bool, nargs='?', default='false',
                                 help='If True, uses a learning rate scheduler that reduces learning rate over training.')
@@ -81,18 +82,36 @@ def get_opt():
     parser.add_argument('--validate_auc', type=str2bool, nargs='?', default='true',
                                 help='If True, validation includes image-level label AUC numbers.')
     parser.add_argument('--index_produce_val_image', type=int, nargs='*', default=[],
-                            help='Sets a list of image indices that will be used to limit the iages loaded for the validation/test set.')
+                            help='Sets a list of image indices that will be used to limit the images loaded for the validation/test set.')
     parser.add_argument('--draw_images', type=str2bool, nargs='?', default='false',
                                 help='If True, draws images for the paper.')
     parser.add_argument('--label_to_draw', type=int, nargs='?', default=None,
                             help='Used to choose which image-level label is draw when drawing images.')
     parser.add_argument('--sm_suffix', type=str, nargs='?', default=None,
                             help='Sets a suffix to put at the end of filenames for draw_images.')
+    parser.add_argument('--use_grid_balancing_loss', type=str2bool, nargs='?', default='false',
+                            help='If true, the normalization of the Li et al. loss is modified to depend on the number of grid celss that are being multiplied.')
+    parser.add_argument('--grid_size', type=int, nargs='?', default=16,
+                            help='The size used to resize eye-tracking heatmaps and ellipses when used as annotations for training the model.')
+    parser.add_argument('--last_layer_index', type=int, nargs='*', default=[4],
+                            help='A list of the spatial layers from resnet to include as output of the model. Number from 1 to 4 are allowed, where 4 is the last spatial layer.')
+    parser.add_argument('--use_mixed_precision', type=str2bool, nargs='?', default='false',
+                            help='If true, pytorch\'s automatic mixed precison is used for training')
+    parser.add_argument('--dataset_type_et', type=str, nargs='?', default='h5',
+                            help='Type of file to save preprocessed dataset to. Options: h5, zarr, png, mmap')
+    
     args = parser.parse_args()
     
+    # if only one threshold for the eye-tracking heatmaps was given, make it the same threshold for all labels
+    if len(args.threshold_box_label)==1:
+        args.threshold_box_label = args.threshold_box_label*10
+    
     args.thresholds_iou = thresholds
-    args.metric_to_validate = 'auc_average_val_mimic_all'
-    args.function_to_compare_validation_metric = lambda x,y:x>=y
+    if args.skip_validation:
+        args.metric_to_validate = 'auc_average_train' # if no valiadtion is performed, use the training AUC for deciding the best epoch
+    else:
+        args.metric_to_validate = 'auc_average_val_mimic_all' # if valiadtion is performed, use the validation AUC for deciding the best epoch
+    args.function_to_compare_validation_metric = lambda x,y:x>=y #the larger the metric the better
     args.initialization_comparison = float('-inf')
 
     #gets the current time of the run, and adds a four digit number for getting
@@ -107,7 +126,6 @@ def get_opt():
         os.environ['CUDA_VISIBLE_DEVICES'] = args.gpus
     else:
         args.gpus = os.environ['CUDA_VISIBLE_DEVICES']
-    
     import platform
     args.python_version = platform.python_version()
     import torch

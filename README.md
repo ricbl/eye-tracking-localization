@@ -7,6 +7,7 @@ This repository contains code for the paper ["Localization supervision of chest 
 1. For running scripts from the `src/chexpert-labeler/` folder, follow the [Prerequisites instructions from the chexpert-labeler](https://github.com/stanfordmlgroup/chexpert-labeler/tree/4629609647d027b1dc9d4f340f5d3c03b4fb4e4f#prerequisites).
 
 1. For running scripts from the `src/` folder, install the following python libraries:
+- python==3.9.7
 - h5py==2.10.0
 - imageio==2.9.0
 - joblib==1.1.0
@@ -21,9 +22,16 @@ This repository contains code for the paper ["Localization supervision of chest 
 - torch==1.10.2
 - torchvision==0.11.3
 
-3. Put the REFLACX dataset's `main_data` folder in the root of this repository. Put MIMIC-CXR-JPG dataset's `files` folder in a folder named `mimic_images`, and the tables `mimic-cxr-2.0.0-chexpert.csv` and `mimic-cxr-2.0.0-split.csv` in a folder named `mimic_tables`. You may also choose other locations for the datasets by changing the paths defined in the `src/global_paths.py` file.
+3. Install the library containing the class that stores datasets into HDF5 files: 
+```
+    cd hdf5_library
+    pip install -e .
+    cd ..
+```
 
-4. To generate the labels of the reports from the REFLACX dataset using the modified chexpert-labeler, run 
+4. Put the REFLACX dataset's `main_data` folder in the root of this repository. Put MIMIC-CXR-JPG dataset's `files` folder in a folder named `mimic_images`, and the tables `mimic-cxr-2.0.0-chexpert.csv` and `mimic-cxr-2.0.0-split.csv` in a folder named `mimic_tables`. You may also choose other locations for the datasets by changing the paths defined in the `src/global_paths.py` file.
+
+5. To generate the labels of the reports from the REFLACX dataset using the modified chexpert-labeler, run 
 
     `python -m src.extract_report`,
 
@@ -37,11 +45,11 @@ This repository contains code for the paper ["Localization supervision of chest 
 
     The modified rules, implemented with the help of a cardiothoracic subspecialty-trained radiologist, can be found in `src/chexpert-labeler/phrases/mention/`, `src/chexpert-labeler/phrases/unmention/`, and `src/chexpert-labeler/patterns/negation.txt`. 
 
-5. To generate heatmaps for each sentence in the REFLACX dataset, run 
+6. To generate heatmaps for each sentence in the REFLACX dataset, run 
 
     `python -m src.find_fixations_all_sentences`. 
 
-6. To generate a preprocessed list containing information about the CXRs to be used from the MIMIC-CXR-JPG dataset, run 
+7. To generate a preprocessed list containing information about the CXRs to be used from the MIMIC-CXR-JPG dataset, run 
 
     `python -m src.mimic_generate_df`.
 
@@ -50,7 +58,7 @@ This repository contains code for the paper ["Localization supervision of chest 
 To train each of the models from the paper, use:
 - for the Unannotated model:
 
-    `python -m src.train --gpus=0 --experiment=unnanotated_baseline --dataset_type=u`;
+    `python -m src.train --gpus=0 --experiment=unannotated_baseline --dataset_type=u`;
 
 - for the Ellipses model: 
 

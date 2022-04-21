@@ -1,3 +1,5 @@
+# file used to put all reports of a phase of the reflacx dataset into the same csv file.
+# It is used for the modified chexpert-labeler
 import csv
 from pathlib import Path
 from .global_paths import metadata_et_location, eyetracking_dataset_path
@@ -37,7 +39,7 @@ def write(reports, path):
 
 
 if __name__ == '__main__':
-    for phase in [2,3]:
+    for phase in [1,2,3]:
         path = f'{metadata_et_location}/metadata_phase_{phase}.csv'
         ids = load_ids(path)
         common_path = Path(eyetracking_dataset_path)

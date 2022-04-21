@@ -1,3 +1,7 @@
+# class that manages the saving of logs to the output folder.
+# logs are in the form of a txt file, a csv file, a tnsorboard log.
+# this class also saves the current source code from the src folder,
+# and the configurations used to run the specific training script
 from tensorboardX import SummaryWriter
 import logging
 import os
@@ -12,6 +16,8 @@ class Outputs():
         self.output_folder = output_folder
         if not os.path.exists(output_folder):
             os.mkdir(output_folder)
+        for handler in logging.root.handlers:
+            logging.root.removeHandler(handler)
         logging.basicConfig(filename = output_folder +'/log.txt' ,level = logging.INFO)
         self.log_configs(opt)
         self.writer = SummaryWriter(output_folder + '/tensorboard/')
@@ -19,7 +25,8 @@ class Outputs():
         with open(self.csv_file, 'w') as f:
             writer = csv.writer(f)
             writer.writerow(['key','value','epoch'])
-        
+    
+    # Write all the configurations from the opt variable to the log.txt file
     def log_configs(self, opt):
         logging.info('-------------------------------used configs-------------------------------')
         for key, value in sorted(vars(opt).items()):
@@ -53,5 +60,6 @@ class Outputs():
         with open("{:}/command.txt".format(self.output_folder), "w") as text_file:
             text_file.write(command)
     
+    # save the weights of a model
     def save_models(self, net_d, suffix):
         torch.save(net_d.state_dict(), '{:}/state_dict_d_'.format(self.output_folder) + str(suffix)) 

@@ -1,3 +1,5 @@
+# a list of the labels in the mimic-cxr dataset, used for selecting the label columns
+# in the mimic-cxr label table
 str_labels_mimic = [
     'No Finding',
     'Enlarged Cardiomediastinum',
@@ -14,6 +16,9 @@ str_labels_mimic = [
     'Fracture',
     'Support Devices']
 
+# list of labels reported in the paper. the order of these labels is important
+# when modifying the code, since it stablishes the index of each label in any tensor
+# that has a labels channel
 list_labels = ['Edema',
 'Opacity',
 'Pneumothorax',
@@ -25,6 +30,8 @@ list_labels = ['Edema',
 'Cardiomegaly',
 'Abnormal Mediastinum Contour']
 
+# dictionary used to translate from the labels of the mimic-cxr dataset to
+# the labels reported in the paper
 translate_mimic_to_label = {'Edema':['Edema','Opacity'], 
 'Pneumothorax':['Pneumothorax'], 
 'Pleural Other':['Pleural abnormality'],
@@ -38,6 +45,9 @@ translate_mimic_to_label = {'Edema':['Edema','Opacity'],
 'Cardiomegaly':['Cardiomegaly'],
 'Enlarged Cardiomediastinum':['Abnormal Mediastinum Contour']}
 
+# dictionary used to translate from labels of the reflacx dataset
+# and labels from the modified version of the chexpert-labeler
+# to the labels that were reported in the paper
 translate_et_to_label = {'Pulmonary edema':['Edema','Opacity'], 
 'Pneumothorax':['Pneumothorax'], 
 'Pleural abnormality':['Pleural abnormality'],

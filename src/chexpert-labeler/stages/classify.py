@@ -123,9 +123,6 @@ class ModifiedDetector(neg_detector.Detector):
         """
         Returns a matcher
         """
-        # print('oi1')
-        # # print(graph)
-        # print(node)
         
         for pattern_ in self.neg_patterns:
             for m in pattern_.finditer(graph):

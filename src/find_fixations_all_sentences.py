@@ -1,11 +1,12 @@
+# script used to pregenerate heatmaps associated with each sentence from reports from
+# the reflacx dataset which were found to contain a mention for the presence of an abnormality,
+# according to the modified chexpert-labeler
 import pandas as pd
 import numpy as np
 from scipy.stats import multivariate_normal
 import csv
 import pathlib
 from joblib import Parallel, delayed
-import shutil
-import json
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -13,9 +14,12 @@ import torch
 from .eyetracking_object import ETDataset
 from .eyetracking_dataset import pre_transform_train
 import os
-from .global_paths import jpg_path, mimic_dir, eyetracking_dataset_path
+from .global_paths import jpg_path, mimic_dir, eyetracking_dataset_path, preprocessed_heatmaps_location,path_chexpert_labels
 from .list_labels import translate_et_to_label
 
+# function that rasterizes a Gaussian centered at x,y of axis-aligned standard deviation sx and sy
+# into an array of size sizex, sizey
+# It only draws the gaussian inside the area defined by shown_rects_image_space
 def get_gaussian(y,x,sy,sx, sizey,sizex, shown_rects_image_space):
     mu = [y-shown_rects_image_space[1],x-shown_rects_image_space[0]]
     sig = [sy**2,sx**2]
@@ -29,52 +33,36 @@ def get_gaussian(y,x,sy,sx, sizey,sizex, shown_rects_image_space):
     to_return[shown_rects_image_space[1]:shown_rects_image_space[3], shown_rects_image_space[0]:shown_rects_image_space[2]] = multivariate_normal(mu, sig).pdf(pos)
     return to_return
 
+# Given a sequence of fixation from a pandas table sequence_table, this function
+# draws heatmaps corresponding to all fixations between sentence_start and sentence_end
 def create_heatmap(sequence_table, size_x, size_y, sentence_start, sentence_end):
     img = np.zeros((size_y, size_x), dtype=np.float32)
     for index, row in sequence_table.iterrows():
-        if (row['timestamp_end_fixation']>sentence_start and row['timestamp_start_fixation']<=sentence_end):
-            pass
-        else:
+        if not (row['timestamp_end_fixation']>sentence_start and row['timestamp_start_fixation']<=sentence_end):
             continue
+        # setting standard deviation of gaussians to one degree of visual field
         angle_circle = 1
+        
         shown_rects_image_space = [round(row['xmin_shown_from_image']) ,round(row['ymin_shown_from_image']),round(row['xmax_shown_from_image']),round(row['ymax_shown_from_image'])]
         gaussian = get_gaussian(row['y_position'],row['x_position'], row['angular_resolution_y_pixels_per_degree']*angle_circle, row['angular_resolution_x_pixels_per_degree']*angle_circle, size_y,size_x, shown_rects_image_space)
-        img += gaussian*(min(row['timestamp_end_fixation'],sentence_end)-max(row['timestamp_start_fixation'],sentence_start))
+        fixatio_start = max(row['timestamp_start_fixation'],sentence_start)
+        fixation_end = min(row['timestamp_end_fixation'],sentence_end)
+        amplitude_multiplier = fixatio_start - fixation_end
+        img += gaussian*amplitude_multiplier
+    # normalize heatmap to between 0 and 1
     return img/np.max(img)
 
-def generate_et_heatmaps_for_one_image_full(trial, image_name,df_this_trial,data_folder,folder_name):
-    index_image = 0
-    for _, df_this_index_this_trial in df_this_trial.iterrows():
-        
-        print('trial', trial, 'index_image', index_image)
-        image_size_x = int(float(df_this_index_this_trial['image_size_x']))
-        image_size_y = int(float(df_this_index_this_trial['image_size_y']))
-        fixations = pd.read_csv(f'{data_folder}/{df_this_index_this_trial["id"]}/fixations.csv')
-        this_img = create_heatmap_full(fixations,image_size_x, image_size_y)
-
-        # Log the progress
-        with open('logs.csv', 'a') as logfile:
-            logwriter = csv.writer(logfile, delimiter=',')
-            logwriter.writerow([trial, folder_name])
-        index_image += 1
-        # break
-    return this_img
-
-def create_heatmap_full(sequence_table, size_x, size_y):
-    img = np.zeros((size_y, size_x), dtype=np.float32)
-    for index, row in sequence_table.iterrows():
-        angle_circle = 1
-        shown_rects_image_space = [round(row['xmin_shown_from_image']) ,round(row['ymin_shown_from_image']),round(row['xmax_shown_from_image']),round(row['ymax_shown_from_image'])]
-        gaussian = get_gaussian(row['y_position'],row['x_position'], row['angular_resolution_y_pixels_per_degree']*angle_circle, row['angular_resolution_x_pixels_per_degree']*angle_circle, size_y,size_x, shown_rects_image_space)
-        img += gaussian*(row['timestamp_end_fixation']-row['timestamp_start_fixation'])
-    return img/np.sum(img)
-
-def generate_et_heatmaps_for_one_image(trial, image_name,df_this_trial,data_folder,folder_name, get_image = False):
+# this function generates eye-tracking heatmaps for all reports related to a specific chest x-ray.
+# The heatmaps are only generated for sentence that contain a positive mention of a label.
+# the get_image argument is only True when generating Figure 1 from the paper
+def generate_et_heatmaps_for_one_image(phase, trial, image_name,df_this_trial,data_folder,folder_name, get_image = False, method = '5s'):
     index_image = 0
     total_uncut = 0
     total_cut = 0
     total_sentences = 0
-    labeled_reports = pd.read_csv(f'labeled_reports_3.csv')
+    labeled_reports = pd.read_csv(f'{path_chexpert_labels}/labeled_reports_{phase}.csv')
+    
+    # For every reading of this chest xray
     for index, df_this_index_this_trial in df_this_trial.iterrows():
         
         print('trial', trial, 'index_image', index_image)
@@ -85,9 +73,13 @@ def generate_et_heatmaps_for_one_image(trial, image_name,df_this_trial,data_fold
         joined_trainscription = ' '.join(transcription['word'].values)
         row_chexpert = labeled_reports.iloc[index]
         if not row_chexpert['Reports'].replace('.',' .').replace(',',' ,') == joined_trainscription:
+            print(index)
+            print(df_this_index_this_trial["id"])
             print(row_chexpert['Reports'].replace('.',' .').replace(',',' ,'))
             print(joined_trainscription)
         assert(row_chexpert['Reports'].replace('.',' .').replace(',',' ,') == joined_trainscription)
+        
+        #getting a list of sentences (sentences_indices) that contain at least one label
         sentences_indices = set()
         indices_stop = [index_char for index_char, char in enumerate(row_chexpert['Reports']) if char == '.']
         for et_label in translate_et_to_label:
@@ -101,6 +93,7 @@ def generate_et_heatmaps_for_one_image(trial, image_name,df_this_trial,data_fold
                                     current_sentence = index_sentence
                                     break
                             sentences_indices.add(current_sentence)
+        
         if get_image:
             print(joined_trainscription)
             
@@ -112,58 +105,84 @@ def generate_et_heatmaps_for_one_image(trial, image_name,df_this_trial,data_fold
         index_sentence = 0
         len_start = 0
         first_start_timestamp = 0
+        timestamp_start_first_sentence = None
         last_end_timestamp = 0
         first_token = True
-        sentences_dict = []
         for _, row in transcription.iterrows():
             word = row['word']
+            
+            # adding spaces to the sentence only when it should be added
             if word != '.' and word != ',' and word != ':' and not first_token:
                 full_sentence+= ' '
-                if not new_sentence:
-                    this_sentence+= ' '
             first_token = False
             if new_sentence:
-                first_start_timestamp_previous = first_start_timestamp
-                last_end_timestamp_previous = last_end_timestamp
-                first_start_timestamp = row['timestamp_start_word']
+                first_start_timestamp_previous = first_start_timestamp #start time of the previous sentence
+                last_end_timestamp_previous = last_end_timestamp #end time of the previous sentence
+                first_start_timestamp = row['timestamp_start_word'] #  start time of the current sentence
+                if timestamp_start_first_sentence is None:
+                    timestamp_start_first_sentence = first_start_timestamp # start time of the first sentence
                 len_start = len(full_sentence)
                 new_sentence = False
-                this_sentence = ''
             full_sentence+= word
-            this_sentence += word
+            
+            #When reaching the end of a sentence, create its heatmap
             if word == '.':
+                last_end_timestamp = row['timestamp_end_word'] # end time of current sentence
+                
+                numpy_filename = f'{folder_name}/{trial}_{index_image}_{index_sentence}.npy'
+                
+                #only create heatmaps for sentences that contain mention of presence of a label
                 if index_sentence in sentences_indices:
+                    
+                    #counting of how many heatmaps were calculated using the 5 second limit and how many were calculated using the "beginning of previous sentence" limit
                     if first_start_timestamp_previous>=first_start_timestamp-5:
                         total_uncut +=1
                     else:
                          total_cut +=1
                     total_sentences +=1
-                    this_img = create_heatmap(fixations,image_size_x, image_size_y, max(first_start_timestamp-5, first_start_timestamp_previous), last_end_timestamp)
-                    # this_img = create_heatmap(fixations,image_size_x, image_size_y, first_start_timestamp_previous, last_end_timestamp)
-                    # this_img = create_heatmap(fixations,image_size_x, image_size_y, first_start_timestamp, last_end_timestamp)
                     
-                    # Saving the array in npy format
-                    info_dict = {'np_image': this_img, 'img_path': pre_process_path(image_name), 
-                                'trial': trial, 'id':df_this_index_this_trial["id"],'char_start':len_start, 'char_end':len(full_sentence)-2}
-                    if not get_image:
-                        np.save(f'{folder_name}/{trial}_{index_image}_{index_sentence}', info_dict)
-                    
-                    # imageio.imwrite(f'{folder_name}/{trial}_{index_image}_{index_sentence}.png', this_img) # too slow; only for debug
+                    if not os.path.exists(numpy_filename):
+                        if method =='5s': 
+                        # default method. For each sentence, the sentence heatmap will contain previous fixations, 
+                        # up to the start of the previous sentence or 5 seconds before the start of the current sentence, whatever happens later
+                            this_img = create_heatmap(fixations,image_size_x, image_size_y, max(first_start_timestamp-5, first_start_timestamp_previous), last_end_timestamp)
+                        if method =='2.5s':
+                        # same as the above method, but using 2.5 seconds instead of 5 seconds
+                            this_img = create_heatmap(fixations,image_size_x, image_size_y, max(first_start_timestamp-2.5, first_start_timestamp_previous), last_end_timestamp)
+                        if method =='7.5s':
+                        # same as the above method, but using 7.5 seconds
+                            this_img = create_heatmap(fixations,image_size_x, image_size_y, max(first_start_timestamp-7.5, first_start_timestamp_previous), last_end_timestamp)
+                        if method == 'single':
+                        # the heatmap for the current sentence is defined by only the fixations made during the dictation of the current sentence
+                            this_img = create_heatmap(fixations,image_size_x, image_size_y, first_start_timestamp, last_end_timestamp)
+                        if method == 'double':
+                        # the heatmap for the current sentence is defined by the fixations made during the dictation of the current sentence, the previous sentence, and everything in between
+                            this_img = create_heatmap(fixations,image_size_x, image_size_y, first_start_timestamp_previous, last_end_timestamp)
+                        if method == 'all':
+                        # the heatmap for the current sentence is defined by all the fixations from the start of data aquisition for this report, up to the end of the current sentence
+                            this_img = create_heatmap(fixations,image_size_x, image_size_y, 0, last_end_timestamp)
+                        if method == 'allsentences':
+                        # the heatmap for the current sentence is defined by all the fixations from the start of the first dictated sentence, up to the end of the current sentence
+                            this_img = create_heatmap(fixations,image_size_x, image_size_y, timestamp_start_first_sentence, last_end_timestamp)
+                        if method == 'andpause':
+                        # the heatmap for the current sentence is defined by all the fixations from the end of the dictation of the previous sentence, up to the end of the current sentenc
+                            this_img = create_heatmap(fixations,image_size_x, image_size_y, last_end_timestamp_previous, last_end_timestamp)
+                        # Saving the array in npy format
+                        info_dict = {'np_image': this_img, 'img_path': pre_process_path(image_name), 
+                                    'trial': trial, 'id':df_this_index_this_trial["id"],'char_start':len_start, 'char_end':len(full_sentence)-2}
+                        if not get_image:
+                            np.save(numpy_filename[:-4], info_dict)
+                        
+                        # imageio.imwrite(f'{folder_name}/{trial}_{index_image}_{index_sentence}.png', this_img) # too slow; only for debug
+                else:
+                    if os.path.exists(numpy_filename):
+                        os.remove(numpy_filename)
                 
                 new_sentence = True
-                sentences_dict.append({'index':index_sentence, 'sentence':this_sentence, 'timestamps':[first_start_timestamp, last_end_timestamp]})
                 index_sentence+=1
-            
-            last_end_timestamp = row['timestamp_end_word']
         
-        # Open a file: file
         with open(f'{data_folder}/{df_this_index_this_trial["id"]}/transcription.txt',mode='r') as transcription_txt:
             full_transcription = transcription_txt.read()
-        if not get_image:
-            pass
-            # with open(f'{folder_name}/{trial}_{index_image}.txt', 'w') as convert_file:
-            #     convert_file.write(json.dumps(sentences_dict, sort_keys=True, indent=4))
-            # shutil.copy(pre_process_path(image_name), f'{folder_name}/{trial}_{index_image}.png')
         assert(full_transcription == full_sentence)
         index_image += 1
     if get_image:
@@ -171,13 +190,14 @@ def generate_et_heatmaps_for_one_image(trial, image_name,df_this_trial,data_fold
     else:
         return total_uncut, total_cut, total_sentences
 
-def create_heatmaps(data_folder, filename_phase, folder_name='heatmaps'):
+# creates threads for the parallel generation eye-tracking heatmaps of each chest x-ray of a phase from the REFLACX dataset
+def create_heatmaps(phase, data_folder, filename_phase, folder_name='heatmaps', method = '5s'): #method can be '5s','single','double','all','all_sentence'
     pathlib.Path(folder_name).mkdir(parents=True, exist_ok=True) 
     df = pd.read_csv(data_folder + filename_phase)
     df = df[df['eye_tracking_data_discarded']==False]
+    df = df.reset_index()
     all_images = df['image'].unique()
-    # generate_et_heatmaps_for_one_image(0, sorted(all_images)[0],df[df['image']==sorted(all_images)[0]],data_folder,folder_name)
-    a = Parallel(n_jobs=32)(delayed(generate_et_heatmaps_for_one_image)(trial, image_name,df[df['image']==image_name],data_folder,folder_name) for trial, image_name in enumerate(sorted(all_images)))
+    a = Parallel(n_jobs=16)(delayed(generate_et_heatmaps_for_one_image)(phase, trial, image_name,df[df['image']==image_name],data_folder,folder_name, method = method) for trial, image_name in enumerate(sorted(all_images)))
     print(np.array(a).sum(0))
 
 def pre_process_path(dicom_path):
@@ -203,9 +223,34 @@ def print_100_reports():
             transcription = pd.read_csv(f'{data_folder}/{df_this_index_this_trial["id"]}/timestamps_transcription.csv')
             print(' '.join(transcription['word'].values))
 
+# function used to generate the whole heatmap of all readings of a chest x-ray
+# only used for the generation of Figure 1 from the paper
+def generate_et_heatmaps_for_one_image_full(trial, image_name,df_this_trial,data_folder,folder_name):
+    index_image = 0
+    for _, df_this_index_this_trial in df_this_trial.iterrows():
+        print('trial', trial, 'index_image', index_image)
+        image_size_x = int(float(df_this_index_this_trial['image_size_x']))
+        image_size_y = int(float(df_this_index_this_trial['image_size_y']))
+        fixations = pd.read_csv(f'{data_folder}/{df_this_index_this_trial["id"]}/fixations.csv')
+        this_img = create_heatmap_full(fixations,image_size_x, image_size_y)
+        index_image += 1
+        
+    return this_img
+
+# function used to generate the whole heatmap of a reading
+# only used for the generation of Figure 1 from the paper
+def create_heatmap_full(sequence_table, size_x, size_y):
+    img = np.zeros((size_y, size_x), dtype=np.float32)
+    for index, row in sequence_table.iterrows():
+        angle_circle = 1
+        shown_rects_image_space = [round(row['xmin_shown_from_image']) ,round(row['ymin_shown_from_image']),round(row['xmax_shown_from_image']),round(row['ymax_shown_from_image'])]
+        gaussian = get_gaussian(row['y_position'],row['x_position'], row['angular_resolution_y_pixels_per_degree']*angle_circle, row['angular_resolution_x_pixels_per_degree']*angle_circle, size_y,size_x, shown_rects_image_space)
+        img += gaussian*(row['timestamp_end_fixation']-row['timestamp_start_fixation'])
+    return img/np.sum(img)
+
 # # generate images for Figure 1 (method) in paper
-# draw image with the best report:
-def get_images_figure_1(index_trial=82):
+# draw image with the best report: (index 82 had a small enough positive report)
+def get_images_figure_1(index_trial=82, grid_size = 16):
     file_phase_3 = 'metadata_phase_3.csv'
     df = pd.read_csv(eyetracking_dataset_path + file_phase_3)
     df = df[df['eye_tracking_data_discarded']==False]
@@ -219,7 +264,7 @@ def get_images_figure_1(index_trial=82):
     print(image_name)
     
     # save original image
-    map = generate_et_heatmaps_for_one_image(index_trial, image_name,df[df['image']==image_name],eyetracking_dataset_path,'delete/', get_image = True)
+    map = generate_et_heatmaps_for_one_image(3,index_trial, image_name,df[df['image']==image_name],eyetracking_dataset_path,'delete/', get_image = True)
     plt.imshow(plt.imread(pre_process_path(image_name)), cmap='gray')
     plt.imshow(map, cmap='jet', alpha = 0.3)
     plt.axis('off')
@@ -227,7 +272,7 @@ def get_images_figure_1(index_trial=82):
     
     # save original heatmap
     plt.imshow(plt.imread(pre_process_path(image_name)), cmap='gray')
-    plt.imshow(generate_et_heatmaps_for_one_image_full(index_trial, image_name,df[df['image']==image_name],eyetracking_dataset_path,'delete/'), cmap='jet', alpha = 0.3)
+    plt.imshow(generate_et_heatmaps_for_one_image_full(3,index_trial, image_name,df[df['image']==image_name],eyetracking_dataset_path,'delete/'), cmap='jet', alpha = 0.3)
     plt.axis('off')
     plt.savefig('./full_heatmap_example.png', bbox_inches='tight', pad_inches = 0)
     
@@ -246,7 +291,7 @@ def get_images_figure_1(index_trial=82):
     
     print('Image labels:')
     print(a[index_train][1])
-    plt.imshow((torch.nn.AdaptiveMaxPool2d((16,16))(torch.tensor(a[index_train][2][1]).unsqueeze(0).unsqueeze(0)).squeeze(0).squeeze(0).numpy()>0.15)*1., cmap='gray')
+    plt.imshow((torch.nn.AdaptiveMaxPool2d((grid_size,grid_size))(torch.tensor(a[index_train][2][1]).unsqueeze(0).unsqueeze(0)).squeeze(0).squeeze(0).numpy()>0.15)*1., cmap='gray')
     plt.axis('off')
     plt.savefig('./discretized_example.png', bbox_inches='tight', pad_inches = 0)
 
@@ -254,10 +299,19 @@ def get_images_figure_1(index_trial=82):
 def pregenerate_all_sentence_heatmaps():
     file_phase_3 = 'metadata_phase_3.csv'
     
-    create_heatmaps(eyetracking_dataset_path, file_phase_3,
-                          folder_name='heatmaps_sentences_phase_3')
+    create_heatmaps(3, eyetracking_dataset_path, file_phase_3,
+                          folder_name=f'{preprocessed_heatmaps_location}/heatmaps_sentences_phase_3')
 
 if __name__=='__main__':
+    # file_phase_1 = 'metadata_phase_1.csv'
+    # 
+    # create_heatmaps(1, eyetracking_dataset_path, file_phase_1,
+    #                   folder_name=f'{preprocessed_heatmaps_location}/heatmaps_sentences_phase_1')
+    # 
+    # file_phase_2 = 'metadata_phase_2.csv'
+    # 
+    # create_heatmaps(2,eyetracking_dataset_path, file_phase_2,
+    #                     folder_name=f'{preprocessed_heatmaps_location}/heatmaps_sentences_phase_2')
     pregenerate_all_sentence_heatmaps()
     # print_100_reports()
     get_images_figure_1()

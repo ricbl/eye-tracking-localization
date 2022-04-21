@@ -1,3 +1,5 @@
+# script used to get recall and precision of the modified chexpert-labeler over a 
+# validation set of unseen reports from phase 1 and phase 2
 import csv
 import json
 from sklearn.metrics import precision_score
@@ -56,8 +58,6 @@ def load_labels(path, label_indices, threshold=0):
     label2id = {tag: i for i, tag in enumerate(labels)}
     return reval, label2id, ids
 
-
-
 def load_pred(path, glabel2id):
     reval = []
     labels = []
@@ -83,7 +83,6 @@ def load_pred(path, glabel2id):
                 reval.append(pred_obs)
     label2id = {tag: i for i, tag in enumerate(labels)}
     return reval, label2id
-
 
 def evaluate(gold_labels, pred_labels, label2id):
     recalls = []
@@ -111,7 +110,6 @@ def evaluate(gold_labels, pred_labels, label2id):
     print(','.join([str(t) for t in recalls]))
     print(','.join([str(t) for t in precs]))
 
-
 def load_text(path):
     reval = []
     with open(path) as csvfile:
@@ -123,7 +121,6 @@ def load_text(path):
                 reval.append(row[0])
     return reval
 
-
 def analyze(path, ids, text, gold_labels, pred_labels):
     data = []
     for id_, sent, glabel, plabel in zip(ids, text, gold_labels, pred_labels):
@@ -134,7 +131,6 @@ def analyze(path, ids, text, gold_labels, pred_labels):
     with open(path, 'w') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-
 def load_ids(path):
     reval = set()
     with open(path) as f:
@@ -143,14 +139,17 @@ def load_ids(path):
             reval.add(s)
     return reval
 
-
 if __name__ == '__main__':
     phase = 2
     path = f'{metadata_et_location}/metadata_phase_{phase}.csv'
     label_indices = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 21, 22]
 
     gold_labels, glabel2id, ids = load_labels(path, label_indices)
+    
+    # loading the cases that were used to define the modifications to the chexpert-labeler 
+    # (20% of the original data)
     checked_ids = load_ids('ids_radiologist_validation_phases_1_and_2.txt')
+    
     path = f'labeled_reports_{phase}.csv'
     pred_labels, plabel2id = load_pred(path,glabel2id)
     text = load_text(path)
@@ -161,7 +160,8 @@ if __name__ == '__main__':
     assert len(gold_labels) == len(pred_labels)
     assert len(text) == len(gold_labels)
 
-    # Filter the checked ids
+    # Filter the checked ids- removing examples that were used to define new
+    # rules, and only leaving unseen examples from phase 1 and 2 for calculating validation metrics
     fgold_labels = []
     fpred_labels = []
     fids = []

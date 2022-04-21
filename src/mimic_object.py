@@ -1,3 +1,4 @@
+#file containing a pytorch dataset for the mimic-cxr dataset
 import imageio
 import numpy as np
 from torch.utils.data import Dataset
@@ -14,6 +15,8 @@ class MIMICCXRDataset(Dataset):
     def __init__(self, df):
         self.df = df
         self.dataset_size = len(self.df)
+        
+        #labels marked as present (1) or uncertain (-1) are considered positive
         self.df[str_labels] = (self.df[str_labels].astype('float').abs().values > 0) * 1.
     
     def __len__(self):
@@ -28,5 +31,6 @@ class MIMICCXRDataset(Dataset):
         for et_label in translate_mimic_to_label:
             for destination_label in translate_mimic_to_label[et_label]:
                 if self.df.iloc[idx][et_label]>0:
+                    # if at least one label from et_label associated with a destination_label is positive, destination_label is positive
                     mimic_gt[list_labels.index(destination_label)]= 1.
         return img, mimic_gt

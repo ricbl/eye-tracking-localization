@@ -1,3 +1,5 @@
+#script used to join the logged metrics for a set of folders (all folders located inside folder_runs)
+# results are saved to table_summary_results.csv
 from collections import defaultdict
 import pandas as pd
 import os
@@ -22,7 +24,7 @@ def get_table(folder_runs):
                         values_gathered = defaultdict(list)
                     current_epoch = int(line.split(':')[3][1:])
                     values_gathered['epoch'] = current_epoch
-                elif line.split(':')[1]=='root' and current_epoch>-1: 
+                elif line.split(':')[1]=='root' and current_epoch>-1 and len(line.split(':'))>3: 
                     metric = line.split(':')[2]
                     if line.split(':')[3][:7]==' tensor':
                         value = float(line.split(':')[3][8:line.split(':')[3].index(',')])
