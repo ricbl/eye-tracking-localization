@@ -226,7 +226,7 @@ def print_100_reports():
 
 # function used to generate the whole heatmap of all readings of a chest x-ray
 # only used for the generation of Figure 1 from the paper
-def generate_et_heatmaps_for_one_image_full(trial, image_name,df_this_trial,data_folder,folder_name):
+def generate_et_heatmaps_for_one_image_full(trial, image_name,df_this_trial,data_folder):
     index_image = 0
     for _, df_this_index_this_trial in df_this_trial.iterrows():
         print('trial', trial, 'index_image', index_image)
@@ -273,11 +273,11 @@ def get_images_figure_1(index_trial=82, grid_size = 16):
     
     # save original heatmap
     plt.imshow(plt.imread(pre_process_path(image_name)), cmap='gray')
-    plt.imshow(generate_et_heatmaps_for_one_image_full(3,index_trial, image_name,df[df['image']==image_name],eyetracking_dataset_path,'delete/'), cmap='jet', alpha = 0.3)
+    plt.imshow(generate_et_heatmaps_for_one_image_full(index_trial, image_name,df[df['image']==image_name],eyetracking_dataset_path), cmap='jet', alpha = 0.3)
     plt.axis('off')
     plt.savefig('./full_heatmap_example.png', bbox_inches='tight', pad_inches = 0)
     
-    a = ETDataset( 'train', 3, pre_transform_train)
+    et_dataset = ETDataset( 'train', 3, pre_transform_train)
     
     with open('./val_mimicid.txt', 'r') as txt_val:
         all_val_ids = txt_val.read().splitlines() 
@@ -286,13 +286,13 @@ def get_images_figure_1(index_trial=82, grid_size = 16):
     train_df = pd.merge(df,mimic_df).reset_index()
     index_train = train_df[train_df['image']==image_name].index.values[0]
     
-    plt.imshow(a[index_train][0].squeeze(0), cmap='gray')
+    plt.imshow(et_dataset[index_train][0].squeeze(0), cmap='gray')
     plt.axis('off')
     plt.savefig('./input_cxr_example.png', bbox_inches='tight', pad_inches = 0)
     
     print('Image labels:')
-    print(a[index_train][1])
-    plt.imshow((torch.nn.AdaptiveMaxPool2d((grid_size,grid_size))(torch.tensor(a[index_train][2][1]).unsqueeze(0).unsqueeze(0)).squeeze(0).squeeze(0).numpy()>0.15)*1., cmap='gray')
+    print(et_dataset[index_train][1])
+    plt.imshow((torch.nn.AdaptiveMaxPool2d((grid_size,grid_size))(torch.tensor(et_dataset[index_train][2][1]).unsqueeze(0).unsqueeze(0)).squeeze(0).squeeze(0).numpy()>0.15)*1., cmap='gray')
     plt.axis('off')
     plt.savefig('./discretized_example.png', bbox_inches='tight', pad_inches = 0)
 
