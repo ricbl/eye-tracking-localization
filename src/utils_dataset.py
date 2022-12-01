@@ -9,6 +9,15 @@ import math
 import random
 
 # get number of positive examples from each split
+def get_average_value(dataset):
+    all_dataset_labels = []
+    for i in range(len(dataset)):
+        dataset_element = dataset[i]
+        # index 1 contains the image-level labels (for the eye-tracking dataset, it is the labels extracted from reports using the modified chexpert-labeler)
+        all_dataset_labels.append(dataset_element[2].mean())
+    print(np.array(all_dataset_labels).mean())
+
+# get number of positive examples from each split
 def get_count_positive_labels(dataset):
     all_dataset_labels = []
     for i in range(len(dataset)):
@@ -195,7 +204,7 @@ class TransformsDataset(Dataset):
     def __getitem__(self, index):
         to_return = self.original_dataset[index]
         fn_run_transform = (lambda s,a: s.original_transform(a))
-        for i in self.indices_to_transform:
+        for i in self.indices_to_transform:            
             to_return = [*to_return[:i], fn_run_transform(self, to_return[i]), *to_return[(i+1):]]
         return to_return
 
@@ -207,6 +216,7 @@ class SeedingPytorchTransformSeveralElements(TransformsDataset):
         self.seed = seed
         self.previouspythonstate = None
         self.previoustorchstate = None
+        self.previousnumpystate = None
     
     def __getitem__(self, index):
         x = self.original_dataset[index]
@@ -215,6 +225,7 @@ class SeedingPytorchTransformSeveralElements(TransformsDataset):
         #saving the random state from outside to restore it afterward
         outsidepythonstate = random.getstate()
         outsidetorchstate = torch.random.get_rng_state()
+        outsidenumpystate = np.random.get_state()
         
         to_return = x
         for i in self.indices_to_transform:
@@ -223,14 +234,17 @@ class SeedingPytorchTransformSeveralElements(TransformsDataset):
                     # for the first sample in a training, set a seed
                     random.seed(self.seed)
                     torch.manual_seed(self.seed)
+                    np.random.seed(self.seed)
             else:
                 # restores the state from either last sample or last element of this sample
                 random.setstate(self.previouspythonstate)
                 torch.random.set_rng_state(self.previoustorchstate)
+                np.random.set_state(self.previousnumpystate)
             
             # saves data augmentation random state to use the same state for all elements of this sample
             self.previouspythonstate = random.getstate() 
             self.previoustorchstate = torch.random.get_rng_state()
+            self.previousnumpystate = np.random.get_state()
             
             # apply transform to element i
             to_return = [*to_return[:i], fn_run_transform(self, to_return[i]), *to_return[(i+1):]]
@@ -238,10 +252,12 @@ class SeedingPytorchTransformSeveralElements(TransformsDataset):
         # saves data augmentation random state to continue from same state when next sample is sampled
         self.previouspythonstate = random.getstate() 
         self.previoustorchstate = torch.random.get_rng_state()
+        self.previousnumpystate = np.random.get_state()
         
         #restoring external random state
         random.setstate(outsidepythonstate)
         torch.random.set_rng_state(outsidetorchstate)
+        np.random.set_state(outsidenumpystate)
         
         return to_return
 
@@ -258,11 +274,11 @@ class ChangeDatasetToIndexList(Dataset):
         return self.original_dataset[self.index_list[index]]
 
 #generic function to get dataloaders from datasets
-def return_dataloaders(instantiate_dataset, split, batch_size, num_workers, index_produce_val_image):
+def return_dataloaders(instantiate_dataset, split, batch_size, num_workers, index_produce_val_image, collate_fn = None):
     #if the dataset should only contain specific images (for image generation for the paper)
-    if len(index_produce_val_image)>0 and split!='train':
+    if len(index_produce_val_image)>0:
         instantiate_dataset_ = instantiate_dataset
         instantiate_dataset = lambda :ChangeDatasetToIndexList(instantiate_dataset_(), index_produce_val_image)
     
     return torch.utils.data.DataLoader(dataset=instantiate_dataset(), batch_size=batch_size,
-                        shuffle=(split=='train'), num_workers=num_workers, pin_memory=True, drop_last = (split=='train'))
+                        shuffle=(split=='train' and len(index_produce_val_image)==0), num_workers=num_workers, pin_memory=True, drop_last = (split=='train'), collate_fn = collate_fn)

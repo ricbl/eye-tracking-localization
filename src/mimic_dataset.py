@@ -34,24 +34,27 @@ post_transform_train_with_data_aug = [
                         normalize
                         ]
 
-def get_mimic_dataset_by_split(split, mimic_dataframe, post_transform, data_aug_seed):
+def get_mimic_dataset_by_split(split, fn_create_dataset, post_transform, data_aug_seed, h5_filename):
     return TransformsDataset(SeedingPytorchTransformSeveralElements(H5Dataset(path = h5_path, 
-        filename = f'{split}_joint_dataset_mimic_noseg',
+        filename = f'{split}_{h5_filename}',
         fn_create_dataset = lambda: 
-            TransformsDataset(MIMICCXRDataset(mimic_dataframe), pre_transform_train, 0),
+            TransformsDataset(fn_create_dataset(split), pre_transform_train, 0),
          preprocessing_functions = [change_np_type_fn(np.ubyte, 1), None], # chest x-rays are converted to 1 byte of precision to save space and disk IO when saving as hdf5 file
          postprocessing_functions = [change_np_type_fn(np.float32, 1./255.), None],
          n_processes = 16, load_to_memory = [False, True]),
             post_transform, data_aug_seed, [0]  ),[ToTensorMine()], 1  )
 
-def get_dataset(split, data_aug_seed, use_data_aug = False, crop = False):
+def get_mimic_by_split(split):
     train_df, val_df, test_df = get_train_val_dfs()
+    return MIMICCXRDataset({'train': train_df, 'val': val_df, 'test': test_df}[split])
+
+def get_dataset(split, data_aug_seed, use_data_aug = False, crop = False, h5_filename = 'joint_dataset_mimic_noseg', fn_create_dataset = get_mimic_by_split):
     if split == 'test':
-        imageset = get_mimic_dataset_by_split('test', test_df, post_transform_val, data_aug_seed)
+        imageset = get_mimic_dataset_by_split('test', fn_create_dataset, post_transform_val, data_aug_seed, h5_filename)
     if split == 'val':
-        imageset = get_mimic_dataset_by_split('val', val_df, post_transform_val, data_aug_seed)
+        imageset = get_mimic_dataset_by_split('val', fn_create_dataset, post_transform_val, data_aug_seed, h5_filename)
     if split=='train':
-        imageset = get_mimic_dataset_by_split('train', train_df, post_transform_val if not use_data_aug else post_transform_train_with_data_aug, data_aug_seed)
+        imageset = get_mimic_dataset_by_split('train', fn_create_dataset, post_transform_val if not use_data_aug else post_transform_train_with_data_aug, data_aug_seed, h5_filename)
     return imageset
 
 if __name__=='__main__':

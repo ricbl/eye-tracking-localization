@@ -5,7 +5,7 @@ from .list_labels import list_labels
 
 def get_auc(runs_folder):
     results_list = []
-    full_df = pd.read_csv('./table_summary_results.csv')
+    full_df = pd.read_csv(f'./table_summary_results_{runs_folder.replace("/", "|")}.csv')
     for folder in full_df['folder'].unique():
         folder_df = full_df[full_df['folder'] == folder]
         with open(f'{runs_folder}/{folder}/log.txt', 'r') as f:
@@ -23,4 +23,4 @@ def get_auc(runs_folder):
                                 'setting':setting,
                                 'label': label})
     
-    pd.DataFrame(results_list).to_csv('auc.csv', index=False)
+    pd.DataFrame(results_list).to_csv(f'auc_{runs_folder.replace("/", "|")}.csv', index=False)

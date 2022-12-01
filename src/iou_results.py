@@ -6,9 +6,9 @@
 import pandas as pd
 import os
 
-def get_iou(test_runs_folder, method = 'cam'):
-    df_thresholds = pd.read_csv('./best_thresholds.csv')
-    table_summary = pd.read_csv('./table_summary_results.csv')
+def get_iou(val_run_folder, test_runs_folder, method = 'cam'):
+    df_thresholds = pd.read_csv(f'./best_thresholds_{val_run_folder.replace("/", "|")}.csv')
+    table_summary = pd.read_csv(f'./table_summary_results_{test_runs_folder.replace("/", "|")}.csv')
     df_thresholds = df_thresholds[df_thresholds['method']==method]
     test_folders = {}
     folders_runs = []
@@ -40,4 +40,4 @@ def get_iou(test_runs_folder, method = 'cam'):
         iou = row_test[f'iou_{label.replace(" ","_")}_val_{method}_iou_{threshold}'].values[0]
         iou_results.append({'original_folder':original_folder,'folder':folder,'setting':setting,'label':label,'threshold':threshold,'iou':iou})
     
-    pd.DataFrame(iou_results).to_csv('iou_results.csv', index=False)
+    pd.DataFrame(iou_results).to_csv(f'iou_results_{method}_{test_runs_folder.replace("/", "|")}.csv', index=False)

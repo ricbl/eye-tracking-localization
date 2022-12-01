@@ -1,13 +1,16 @@
 # file defining all data processing applied to the eye-tracking dataset
 import torchvision.transforms as transforms
+from torch.utils.data import Dataset
 import torch
-from .utils_dataset import TransformsDataset, SeedingPytorchTransformSeveralElements, GrayToThree, ResizeHeatmap, ToTensorMine, XRayResizerPadRound32, ToNumpy, ToTensor1, get_count_positive_labels
+from .utils_dataset import TransformsDataset, SeedingPytorchTransformSeveralElements, GrayToThree, ResizeHeatmap, ToTensorMine, XRayResizerPadRound32, ToNumpy, ToTensor1, get_count_positive_labels, get_average_value
 from h5_dataset.h5_dataset import H5Dataset, H5ProcessingFunction, H5ComposeFunction, change_np_type_fn, PNGDataset, MMapDataset, ZarrDataset, PackBitArray, UnpackBitArray
 from .eyetracking_object import ETDataset
 import pandas as pd
 import numpy as np
 from .global_paths import h5_path
 from .list_labels import list_labels
+import imageio
+import matplotlib.pyplot as plt
 
 normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                  std=[0.229, 0.224, 0.225])
@@ -20,6 +23,22 @@ post_transform_train = [
                         transforms.RandomAffine(degrees=45, translate=(0.15, 0.15),
                         scale=(0.85, 1.15), fill=0),
                         ]
+
+class AddEndToken(Dataset):
+    def __init__(self, original_dataset):
+        self.original_dataset = original_dataset
+    
+    def __len__(self):
+        return len(self.original_dataset)
+    
+    def __getitem__(self, index):
+        element = self.original_dataset[index]
+        #pad to 12 symbols
+        element[1] = torch.nn.functional.pad(element[1], [0,2])
+        
+        #change the last item of the last item in the sequence to represent an end token
+        element[1][-1, -1] = 1.
+        return element
 
 # preprocessing function used to delete all channels of annotations of the dataset that are 
 # just zeros. It also saves which channels were kept such that the original
@@ -83,7 +102,8 @@ class load_max_fn(H5ProcessingFunction):
 
 # this function packs all the arguments needed to load the eye-tracking dataset from the H5 file
 # to avoid copy-and-paste of code
-def get_h5_dataset(filename, individual_datasets, class_eyetracking_dataset, load_to_memory, fn_create_dataset):
+def get_h5_dataset(filename, individual_datasets, class_eyetracking_dataset, load_to_memory, fn_create_dataset, sequence_model):
+    
     # applying a few optimizations when saving the hdf5 file:
     # - the chest x-ray is transformed to ubyte type since it only contains 255 levels of grey, anyway.
     # This resizing reduces the size of the arrays to 1/4 of what they would be if using float32. No 
@@ -97,40 +117,52 @@ def get_h5_dataset(filename, individual_datasets, class_eyetracking_dataset, loa
     # - the ellipse ground truths only have two level of intensities, so beside removing he maps that are all 0, 
     # the type is converted to bool and the array is packed into bit. The packing into bits is necessary for
     # the use of only a single bit per pixel, since arrays of type bool are not efficient and use 8 bits per pixel
+    if not sequence_model:
+        preprocessing_functions_heatmap = [save_max_fn('mask_labels'), delete_zeros_fn('mask_labels'), change_np_type_fn(np.ushort, 65535.)]
+    else:
+        preprocessing_functions_heatmap = [save_max_fn('mask_labels'), change_np_type_fn(np.ushort, 65535.)]
+    
+    if not sequence_model:
+        postprocessing_functions_heatmap = [change_np_type_fn(np.float32, 1./65535.), load_max_fn('mask_labels'), reinsert_zeros_fn('mask_labels')]
+    else:
+        postprocessing_functions_heatmap = [change_np_type_fn(np.float32, 1./65535.), load_max_fn('mask_labels')]
+    
     return TransformsDataset(TransformsDataset(
         class_eyetracking_dataset(path = h5_path, 
             filename = filename,
             fn_create_dataset = fn_create_dataset, 
             individual_datasets = individual_datasets,
             preprocessing_functions = [change_np_type_fn(np.ubyte, 1), None, 
-                H5ComposeFunction([save_max_fn('mask_labels'), delete_zeros_fn('mask_labels'), change_np_type_fn(np.ushort, 65535.)]), 
+                H5ComposeFunction(preprocessing_functions_heatmap), 
                 H5ComposeFunction([delete_zeros_fn('ellipse_labels'), change_np_type_fn(np.bool, 1.), PackBitArray('ellipse_labels')])
                 , None, None],
             postprocessing_functions = [change_np_type_fn(np.float32, 1./255.), None, 
-                H5ComposeFunction([change_np_type_fn(np.float32, 1./65535.), load_max_fn('mask_labels'), reinsert_zeros_fn('mask_labels')]), 
+                H5ComposeFunction(postprocessing_functions_heatmap), 
                 H5ComposeFunction([UnpackBitArray('ellipse_labels'), change_np_type_fn(np.float32, 1.), reinsert_zeros_fn('ellipse_labels')])
                 , None, None],  n_processes = 16, load_to_memory = [load_to_memory, True, True, True, True, True]),
         [GrayToThree(), ToTensorMine()], indices_to_transform = 0),
         [ToTensorMine()], indices_to_transform = [1,2,3,4,5])
 
-def get_dataset_et(split, data_aug_seed, grid_size=8, use_et = True, use_data_aug = False, crop = False, load_to_memory = False, dataset_type = H5Dataset):
+def get_dataset_et(split, data_aug_seed, grid_size=8, use_et = True, use_data_aug = False, crop = False, load_to_memory = False, dataset_type = 'h5', sequence_model = False, h5_filename = 'joint_dataset_et_3_noseg_optimized', calculate_label_specific_heatmaps = True, fn_initialize_function = (lambda split, sequence_model, calculate_label_specific_heatmaps: ETDataset(split,3, pre_transform_train, sequence_model, calculate_label_specific_heatmaps = calculate_label_specific_heatmaps))):
     class_eyetracking_dataset = {'h5':H5Dataset, 'mmap':MMapDataset, 'zarr':ZarrDataset, 'png':PNGDataset}[dataset_type]
     if dataset_type in {'h5','mmap','zarr'}:
         #setting individual_datasets to True for the eye-tracking heatmaps and ellipse ground truth
         # because the optimization with delete_zeros_fn makes these arrays, for each chest x-ray,
         # to have different sizes
-        individual_datasets = [False, False, True, True, False, False]
+        individual_datasets = [False, sequence_model, True, True, False, False]
     elif dataset_type == 'png':
         # the class PNGDataset needs inidividual datasets
         individual_datasets = True
     if split == 'test':
-        imageset = TransformsDataset(TransformsDataset(get_h5_dataset('test_joint_dataset_et_3_noseg_optimized',individual_datasets, class_eyetracking_dataset, load_to_memory, lambda: ETDataset('test',3, pre_transform_train)),
+        imageset = TransformsDataset(TransformsDataset(get_h5_dataset('test_' + h5_filename + ('_sequence' if sequence_model else '') + ('_full_heatmap' if not calculate_label_specific_heatmaps else ''),individual_datasets, class_eyetracking_dataset, load_to_memory, lambda: fn_initialize_function('test', sequence_model, calculate_label_specific_heatmaps), sequence_model),
             [normalize], indices_to_transform= 0), [ResizeHeatmap(grid_size)], indices_to_transform = 2)
     if split == 'val':
-        imageset = TransformsDataset(TransformsDataset(get_h5_dataset('val_joint_dataset_et_3_noseg_optimized',individual_datasets, class_eyetracking_dataset, load_to_memory, lambda: ETDataset('val',3, pre_transform_train)),
+        imageset = TransformsDataset(TransformsDataset(get_h5_dataset('val_' + h5_filename + ('_sequence' if sequence_model else '') + ('_full_heatmap' if not calculate_label_specific_heatmaps else ''),individual_datasets, class_eyetracking_dataset, load_to_memory, lambda: fn_initialize_function('val', sequence_model, calculate_label_specific_heatmaps), sequence_model),
             [normalize], indices_to_transform = 0), [ResizeHeatmap(grid_size)], indices_to_transform = 2)
     if split == 'train':
-        imageset = get_h5_dataset('train_joint_dataset_et_3_noseg_optimized',individual_datasets, class_eyetracking_dataset, load_to_memory, lambda: ETDataset('train',3, pre_transform_train))
+        imageset = get_h5_dataset('train_' + h5_filename + ('_sequence' if sequence_model else '') + ('_full_heatmap' if not calculate_label_specific_heatmaps else ''),individual_datasets, class_eyetracking_dataset, load_to_memory, lambda: fn_initialize_function('train', sequence_model, calculate_label_specific_heatmaps), sequence_model)
+        if sequence_model:
+            imageset = AddEndToken(imageset)
         if not use_data_aug:
             imageset = TransformsDataset(TransformsDataset(imageset, [normalize], indices_to_transform = 0), [ResizeHeatmap(grid_size)], indices_to_transform = 2)
             if not use_et:
@@ -144,6 +176,7 @@ def get_dataset_et(split, data_aug_seed, grid_size=8, use_et = True, use_data_au
             if not use_et:
                 # if training the ellipse model, the ellipses should be resized for training
                 imageset = TransformsDataset(imageset, [ResizeHeatmap(grid_size)], indices_to_transform = 3)
+    
     return imageset
 
 # get list of all grid values in eye-tracking heatmaps that are larger than 0.005
@@ -152,7 +185,7 @@ def get_dataset_et(split, data_aug_seed, grid_size=8, use_et = True, use_data_au
 def get_list_of_values_from_grid_for_histogram(grid_size = 16):
     c = []
     for phase in [3]:
-        a = get_h5_dataset('val',[False, False, True, True, False, False], H5Dataset, False)
+        a = get_h5_dataset('val_joint_dataset_et_3_noseg_optimized',[False, False, True, True, False, False], H5Dataset, False, False, False)
         for i in range(len(a)):
             d = a[i]
             e = ResizeHeatmap(grid_size)(torch.tensor(d[2])).numpy().reshape([-1])
@@ -167,24 +200,24 @@ def get_list_of_values_from_grid_for_histogram(grid_size = 16):
 if __name__=='__main__':
     # code used to print the size and number of positive labels in each split of the reflacx dataset
     grid_size=16
-    get_list_of_values_from_grid_for_histogram(grid_size=grid_size)
-    print(list_labels)
-    dataset = get_dataset_et('train', 1, grid_size=grid_size, use_et = True, use_data_aug = True, crop = False)
+    dataset = get_dataset_et('train', 1, grid_size=grid_size, use_et = True, use_data_aug = True, crop = False, sequence_model = False)
+    
     print('Train')
     print('Dataset size:')
     print(len(dataset))
     print('Count positive labels:')
-    get_count_positive_labels(dataset)
-    dataset = get_dataset_et('val', 1, grid_size=grid_size, use_et = True, use_data_aug = True, crop = False)
+    get_average_value(dataset)
+    dataset = get_dataset_et('val', 1, grid_size=grid_size, use_et = True, use_data_aug = True, crop = False, sequence_model = False)
+    
     print('Val')
     print('Dataset size:')
     print(len(dataset))
     print('Count positive labels:')
-    get_count_positive_labels(dataset)
-    dataset = get_dataset_et('test', 1, grid_size=grid_size, use_et = True, use_data_aug = True, crop = False)
+    get_average_value(dataset)
+    dataset = get_dataset_et('test', 1, grid_size=grid_size, use_et = True, use_data_aug = True, crop = False, sequence_model = False)
     print('Test')
     print('Dataset size:')
     print(len(dataset))
     print('Count positive labels:')
-    get_count_positive_labels(dataset)
+    get_average_value(dataset)
     

@@ -99,7 +99,24 @@ def get_opt():
                             help='If true, pytorch\'s automatic mixed precison is used for training')
     parser.add_argument('--dataset_type_et', type=str, nargs='?', default='h5',
                             help='Type of file to save preprocessed dataset to. Options: h5, zarr, png, mmap')
-    
+    parser.add_argument('--sequence_model', type=str2bool, nargs='?', default='false',
+                            help='If true, use the heatmaps of every sentence as input to a sequence model. Not used in the paper.')
+    parser.add_argument('--dataset_name', type=str, nargs='?', default='xray',
+                            help='Only used if sequence_model is true. Accepted values: "xray" or "toy". Toy is a dataset with synthetic images using spread digits from MNIST and randomly selected sequence of fixations.')
+    parser.add_argument('--checkpoint_sequence', type=str, nargs='?', default=None,
+                            help='Checkpoint for the sequence model.')
+    parser.add_argument('--type_toy', type=str, nargs='?', default='original',
+                            help='Changes details of how the toy dataset is generated. Accepted values: "original", "no_negatives", "fixed_sentences", or "inverted"')
+    parser.add_argument('--unet', type=str2bool, nargs='?', default='false',
+                            help='If true, use the multitask learning from Creation and validation of a chest x-ray dataset with eye-tracking and report dictation for AI development, Karargyris  et al..')
+    parser.add_argument('--gamma_unet', type=float, nargs='?', default=1,
+                            help='Weight given to the multitask/decoder part of the loss.')
+    parser.add_argument('--sigma_loss_multiplier', type=float, nargs='?', default=0,
+                            help='If a weight higher than 0 is used, the sigma uncertainty loss (Follow My Eye: Using Gaze to Supervise Computer-Aided Diagnosis, Wang et al.) will be activated. No result was presented in the paper with this loss because no improvement was seen.')
+    parser.add_argument('--enforce_negatives_sigma', type=str2bool, nargs='?', default='false',
+                            help='If false, enforce the GradCAM heatmap to be similar to the label-specific eye-tracking heatmaps for positive labels. If true, in addition to those cases, also enforce the heatmaps from gradcam to be fully zeros when a label is not present in the image.')
+    parser.add_argument('--calculate_label_specific_heatmaps', type=str2bool, nargs='?', default='true',
+                            help='If false, use the heatmaps of the whole report/dictation as annotation, using a single heatmap for every single class label. Only used for ablation study.')
     args = parser.parse_args()
     
     # if only one threshold for the eye-tracking heatmaps was given, make it the same threshold for all labels

@@ -10,14 +10,14 @@ from collections import defaultdict
 # list_methods represent which method used to calculate model heatmaps
 # shoul dbe considered. Options are "ellipse" (using last spatial layer activations)
 # or "cam" (using grad-cam)
-def get_thresholds(folder_runs, list_methods = ['cam', 'ellipse']):
+def get_thresholds(folder_runs, list_methods = ['cam', 'ellipse', 'unet']):
     folders_runs = []
     for _, dirnames, _ in os.walk(folder_runs):
         folders_runs += dirnames
         break
 
     runs_folder = folder_runs
-    full_df = pd.read_csv('./table_summary_results.csv')
+    full_df = pd.read_csv(f'./table_summary_results_{folder_runs.replace("/", "|")}.csv')
     results_list = []
     for label in list_labels:
         for method in list_methods:
@@ -62,4 +62,4 @@ def get_thresholds(folder_runs, list_methods = ['cam', 'ellipse']):
                             'index_row':index_row,
                             'folder':folders[index_row],
                             'original_folder':original_folders[index_row]})
-    pd.DataFrame(results_list).to_csv('best_thresholds.csv', index=False)
+    pd.DataFrame(results_list).to_csv(f'best_thresholds_{folder_runs.replace("/", "|")}.csv', index=False)

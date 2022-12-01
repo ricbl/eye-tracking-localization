@@ -32,8 +32,38 @@ class PatchSlicing(torch.nn.Module):
             x = torch.nn.functional.interpolate(x, scale_factor = self.grid_size/x.size(2), mode='bilinear', align_corners=True)
         return x
 
+class Upsample(torch.nn.Module):
+    def __init__(self, scale_factor=2):
+        super(Upsample, self).__init__()
+        self.scale_factor = scale_factor
+    
+    def forward(self, x):
+        return torch.nn.functional.interpolate(x, scale_factor = self.scale_factor, mode='bilinear', align_corners=True)
+
+def deconv2d_bn_block(in_channels, out_channels):
+    conv_layer = torch.nn.Conv2d(in_channels, out_channels, 3, stride=1, padding=1)
+    up = torch.nn.Sequential(
+        Upsample(scale_factor=2),
+        conv_layer)
+    bn_layer = torch.nn.BatchNorm2d(out_channels, momentum=0.01)
+    return torch.nn.Sequential(
+        up,
+        bn_layer
+    )
+
+class DecodingNetwork(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.model = torch.nn.Sequential(deconv2d_bn_block(512, 128),torch.nn.ReLU(),
+                            deconv2d_bn_block(128, 64),torch.nn.ReLU(),
+                            deconv2d_bn_block(64, 10))
+    
+    def forward(self,x):
+        to_return = self.model(x)
+        return to_return
+
 class RecognitionNetwork(torch.nn.Module):
-    def __init__(self, last_layer_index = [4]):
+    def __init__(self, last_layer_index = [4], do_avg_pool = False):
         super().__init__()
         total_channels_last_layer = 0
         
@@ -51,16 +81,29 @@ class RecognitionNetwork(torch.nn.Module):
         self.bn = torch.nn.BatchNorm2d(512)
         self.relu = torch.nn.ReLU()
         self.conv2 = torch.nn.Conv2d(512,10, 1)
-        
+        self.do_avg_pool = do_avg_pool
+        self.avg_pool = torch.nn.AdaptiveAvgPool2d((1,1))
+    
+
+    
     def forward(self,x, return_activations):
         x = self.conv1(x)
         x = self.bn(x)
+        x = self.relu(x)
+        
         if return_activations: # for grad-cam calculation
-            x1 = self.relu(x)
+            if self.do_avg_pool:
+                x1 = self.avg_pool(x)
+            else:
+                x1 = x
             x1 = self.conv2(x1)
-            return x1, x
+            
+            cams = torch.nn.functional.relu((self.conv2.weight[None]*x[:,None,...]).sum(dim = 2))            
+            cams = cams/(torch.max(cams.view([cams.size(0),cams.size(1),-1]), dim=2, keepdims = False)[0].unsqueeze(2).unsqueeze(2)+1e-20)
+            return x1, x, cams
         else:
-            x = self.relu(x)
+            if self.do_avg_pool:
+                x = self.avg_pool(x)
             return self.conv2(x)
 
 def forward_inference(out, normalize_fn):
@@ -83,6 +126,13 @@ ce_pytorch = torch.nn.BCEWithLogitsLoss()
 
 def forward_inference_ce(out, normalize_fn):
     return torch.sigmoid(avgpool_pytorch(out).squeeze(3).squeeze(2))
+
+class loss_ce_grid(object):
+    def __init__(self, threshold, weight_annotated, normalize_fn, use_balancing):
+        pass
+    
+    def __call__(self, out, labels, box_label, contain_bbox):
+        return ce_pytorch(out, box_label)
 
 class loss_ce(object):
     def __init__(self, threshold, weight_annotated, normalize_fn, use_balancing):
@@ -164,18 +214,29 @@ class Thoracic(torch.nn.Module):
         
         self.patch_slicing = PatchSlicing(grid_size)
         self.recognition_network = RecognitionNetwork(last_layer_index)
+        self.decoder =  None
     
-    def forward(self,x):
+    def add_decoder(self, decoder):
+        self.decoder = decoder
+    
+    def forward(self,x, return_activations = False):
         x = self.preprocessing(x)
         x = self.get_cnn_features(x)
+        
         x = self.patch_slicing(x)
-        if (x.requires_grad) and self.calculate_cam:
-            x, activations = self.recognition_network(x, True)
+        if return_activations or ((x.requires_grad) and (self.calculate_cam)):
+            x, activations, cam = self.recognition_network(x, True)
             self.activations = activations
-            h = activations.register_hook(self.activations_hook)
+            if ((x.requires_grad) and (self.calculate_cam)):
+                h = activations.register_hook(self.activations_hook)
         else:
             x = self.recognition_network(x, False)
-        return x
+        if self.decoder is not None:
+            attention_upsized = self.decoder(self.activations)
+        if return_activations:
+            return x.squeeze(2).squeeze(2), self.activations, cam, x, attention_upsized if self.decoder else None
+        else:
+            return x
     
     #methods used for gradcam calculation
     def activations_hook(self, grad):

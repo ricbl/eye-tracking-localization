@@ -3,8 +3,9 @@ import torch
 
 #apply teh gradcam equation to calculated gradients and activation maps
 def get_heatmap_index(gradients, activations):
-    pooled_gradients = torch.mean(gradients, dim=[2, 3], keepdims = True)
+    pooled_gradients = torch.sum(gradients, dim=[2, 3], keepdims = True)
     map = activations * pooled_gradients
+    
     heatmap = torch.nn.functional.relu(torch.sum(map, dim=1))
     return heatmap
 
@@ -22,10 +23,8 @@ def get_heatmap(pred, label_idx, model):
     # get activations of the last spatial layer and the gradient of the outputs of the model with respect to the last spatial layer
     gradient = model.get_activations_gradient()
     activation = model.get_activations().detach()
-    
     #calculate gradcam using its equation
     cams = get_heatmap_index(gradient, activation)
-    
-    cams = cams/torch.max(cams.view([cams.size(0),-1]), dim=1, keepdims = False)[0].unsqueeze(1).unsqueeze(1)
+    cams = cams/(torch.max(cams.view([cams.size(0),-1]), dim=1, keepdims = False)[0].unsqueeze(1).unsqueeze(1)+1e-20)
     
     return cams

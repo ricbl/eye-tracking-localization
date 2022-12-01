@@ -3,7 +3,8 @@
 # This validation is performed using cases from Phase 1 and Phase 2, which do not intersect with the cases from Phase 3 used in the paper
 from argparse import Namespace
 from .eyetracking_object import ETDataset
-from .utils_dataset import JoinDatasets, H5Dataset
+from h5_dataset.h5_dataset import H5Dataset
+from .utils_dataset import JoinDatasets
 from . import output as outputs
 from . import metrics
 from .table_summary_results import get_table
@@ -32,13 +33,25 @@ def get_heatmaps(heatmap_method):
     create_heatmaps(2, eyetracking_dataset_path, file_phase_2,
                       folder_name=f'{preprocessed_heatmaps_location}/heatmaps_sentences_phase_2', method = heatmap_method)
 
+def get_full_errors_percentage(boxes, heatmap):
+    fn = (torch.logical_and(boxes.sum(dim = [2,3])>0, heatmap.sum(dim = [2,3])==0)*1.)
+    fp = (torch.logical_and(boxes.sum(dim = [2,3])==0, heatmap.sum(dim = [2,3])>0)*1.)
+    tp = (torch.logical_and(boxes.sum(dim = [2,3])>0, heatmap.sum(dim = [2,3])>0)*1.)
+    tn = (torch.logical_and(boxes.sum(dim = [2,3])==0, heatmap.sum(dim = [2,3])==0)*1.)
+    return  tp, fp, fn, tn
+
 def run_one_batch(element, metric):
     boxes = torch.tensor(element[3])
     heatmap = torch.tensor(element[2])
     label = torch.tensor(element[4])
-    
+    tp, fp, fn, tn = get_full_errors_percentage(boxes, heatmap)
+    metric.add_list(f'tp', tp.sum(dim = 1))
+    metric.add_list(f'fp', fp.sum(dim = 1))
+    metric.add_list(f'fn', fn.sum(dim = 1))
+    metric.add_list(f'tn', tn.sum(dim = 1))
     for threshold in thresholds_iou:
         iou = localization_score_fn(boxes, heatmap,threshold)
+        
         metric.add_iou(f'val_ellipse_iou_{threshold}', iou, label)
 
 def run_epoch(heatmap_method,etdataset_loader,index_heatmap_method):
@@ -54,7 +67,7 @@ def run_epoch(heatmap_method,etdataset_loader,index_heatmap_method):
         output = outputs.Outputs(opt, folder_runs_val + '/' + experiment)
         output.save_run_state(os.path.dirname(__file__))
         metric = metrics.Metrics(False, False)
-        
+            
         # iterate through the whole dataset, calculating the iou for each example
         for index_element, element in enumerate(etdataset_loader):
             print(index_element)
@@ -67,14 +80,35 @@ def run_thresholds_one_method(heatmap_method, index_heatmap_method):
     preprocessed_heatmaps_location = f'./{heatmap_method}_heatmaps/'
     
     # generate an eye-tracking dataset using the sentence heatmaps extracted with the respective method
-    etdataset = JoinDatasets([ETDataset('train', 1,pre_transform_train, preprocessed_heatmaps_location),ETDataset('train', 2, pre_transform_train, preprocessed_heatmaps_location)])
-    etdataset = get_h5_dataset(f'{heatmap_method}', [False, False, True, True, False, False], H5Dataset, False, lambda: etdataset)
+    etdataset = JoinDatasets([ETDataset('train', 1,pre_transform_train, False, preprocessed_heatmaps_location),ETDataset('train', 2, pre_transform_train, False, preprocessed_heatmaps_location)])
+    etdataset = get_h5_dataset(f'{heatmap_method}_h5', [False, False, True, True, False, False], H5Dataset, False, lambda: etdataset, sequence_model = False)
     etdataset_loader = torch.utils.data.DataLoader(dataset=etdataset, batch_size=20,
                         shuffle=False, num_workers=5, pin_memory=True, drop_last = False)
     run_epoch(heatmap_method,etdataset_loader, index_heatmap_method)
 
 if __name__=='__main__':
-    for index_heatmap_method, heatmap_method in enumerate(['5s','single','double','all','allsentences', 'andpause', '2.5s', '7.5s']):
+    
+    list_of_methods = ['5.0s', '2.5s', '7.5s']
+    
+    allowed_pairs = {'startofsentence':['endofsentence','startofsentence','firstmention','lastmention'],
+                'mention':['lastmention','endofsentence','firstmention'], 'endofsentence':['endofsentence']}
+    list_of_methods_1 = []
+    for i in range(len(list_of_methods)):
+        for start_method in ['startofsentence','endofsentence','mention']:
+            for end_method in allowed_pairs[start_method]:
+                list_of_methods_1.append(list_of_methods[i] + '_' + start_method + '_' + end_method )
+    
+    list_of_methods_extra = ['single','double','all','allsentences', 'andpause']
+    
+    list_of_methods_2 = []
+    for i in range(len(list_of_methods_extra)):
+        for end_method in ['endofsentence','startofsentence','firstmention','lastmention']:
+            if end_method in {'startofsentence','firstmention','lastmention'} and list_of_methods_extra[i] in {'single', 'allsentences','andpause'}:
+                continue
+            list_of_methods_2.append(list_of_methods_extra[i] + '_' + end_method)
+    list_of_methods = list_of_methods_1 + list_of_methods_2
+    
+    for index_heatmap_method, heatmap_method in enumerate(list_of_methods):
         get_heatmaps(heatmap_method)
         run_thresholds_one_method(heatmap_method, index_heatmap_method)
 

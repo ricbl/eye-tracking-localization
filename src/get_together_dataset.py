@@ -6,6 +6,36 @@ from .utils_dataset import return_dataloaders, IteratorLoaderDifferentSizesSameB
 import math
 from .eyetracking_dataset import get_dataset_et
 from .mimic_dataset import get_dataset as get_dataset_mimic
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence, pad_sequence
+from .toy_dataset import get_toy_dataset
+
+def pad_collate_fn(batch):
+    cxr, sequence_image_level_labels, is_sequence, sequence_annotations, lengths = zip(
+        *[
+            (cxr, sequence_image_level_labels, is_sequence, sequence_annotations, len(sequence_image_level_labels))
+            for (cxr, sequence_image_level_labels, is_sequence, sequence_annotations) in sorted(
+                batch, key=lambda x: len(x[1]), reverse=True
+            )
+        ]
+    )
+    lengths = torch.LongTensor(lengths)
+    
+    padded_sequence_annotations = pad_sequence(
+        sequence_annotations, batch_first=True, padding_value=0
+    )
+    pack_padded_sequence_annotations = pack_padded_sequence(
+        padded_sequence_annotations, lengths.cpu(), batch_first=True
+    )
+    
+    padded_sequence_image_level_labels = pad_sequence(
+        sequence_image_level_labels, batch_first=True, padding_value=0
+    )
+    
+    pack_padded_sequence_image_level_labels = pack_padded_sequence(
+        padded_sequence_image_level_labels, lengths.cpu(), batch_first=True
+    )
+    
+    return torch.stack(cxr), pack_padded_sequence_image_level_labels, torch.stack(is_sequence), pack_padded_sequence_annotations
 
 # class used to put annotated dataset and unannotated dataset in the same dataset.
 # The outputs of the __getitem__ function have to be standardized in content, indexing and size, leading to a return with 4 elements:
@@ -14,13 +44,14 @@ from .mimic_dataset import get_dataset as get_dataset_mimic
 # element 2: values representing if a location annotation is present (0 for absent, 1 for present)
 # element 3: location annotation (all zeros if absent). It might be sourced from eye-tracking data or ellipses drawn by radiologists
 class JoinDatasetsAnotatedUnannotated(Dataset):
-    def __init__(self, annotated_dataset, simple_dataset, use_et, grid_size):
+    def __init__(self, annotated_dataset, simple_dataset, use_et, grid_size, sequence_model):
         super().__init__()
         self.dataset_list = [simple_dataset, annotated_dataset]
         self.len_ = sum([len(self.dataset_list[i]) for i in range(len(self.dataset_list))])
         self.index_mapping = np.zeros([self.len_,2]).astype(int)
         self.use_et = use_et
         self.grid_size = grid_size
+        self.sequence_model = sequence_model
         current_index = 0
         
         # create a mapping from the index of an example of the joint dataset to the dataset it belongs to
@@ -46,7 +77,9 @@ class JoinDatasetsAnotatedUnannotated(Dataset):
             # return 0 to indicate that this image does not contains annotation
             # element 3:
             # return an array of zeros with the same shape of the ellipse annotations
-            return one_case[0], one_case[1], torch.tensor(0.),  torch.zeros(10,self.grid_size,self.grid_size) 
+            if self.sequence_model:
+                one_case[1] = one_case[1].unsqueeze(0)
+            return one_case[0], one_case[1], torch.tensor(0.),  torch.zeros(1 if self.sequence_model else 10,self.grid_size,self.grid_size) 
         # if image indexed with index is from the annotated dataset
         if self.index_mapping[index,0] == 1:
             one_case = self.dataset_list[1][self.index_mapping[index,1]]
@@ -72,14 +105,14 @@ class JoinDatasetsRemoveAnnotations(JoinDatasetsAnotatedUnannotated):
             # element 0: chest x-ray image
             # element 1:
             # image-level labels from the MIMIC-CXR dataset
-            return one_case[0], one_case[1], torch.tensor(0.),  torch.zeros(10,self.grid_size,self.grid_size) 
+            return one_case[0], one_case[1], torch.tensor(0.),  torch.zeros(1 if self.sequence_model else 10,self.grid_size,self.grid_size) 
         if self.index_mapping[index,0] == 1:
             one_case = self.dataset_list[1][self.index_mapping[index,1]]
             # element 0: chest x-ray image
             # element 1: labels from the mimic-cxr dataset
             # element 3: return 0 for "unannotated", since annotation has been removed
             # element 4: return all zeros as annotation
-            return  one_case[0], one_case[5], torch.tensor(0.),  torch.zeros(10,self.grid_size,self.grid_size) 
+            return  one_case[0], one_case[5], torch.tensor(0.),  torch.zeros(1 if self.sequence_model else 10,self.grid_size,self.grid_size) 
 
 # dataset with no examples (length 0)
 class Len0Dataset(Dataset):
@@ -109,9 +142,10 @@ class ReduceDataset(Dataset):
 
 #changing the order of elements for the annotated validation dataset
 class ValAnDatasets(Dataset):
-    def __init__(self, annotated_dataset):
+    def __init__(self, annotated_dataset, dataset_name):
         super().__init__()
         self.annotated_dataset = annotated_dataset
+        self.dataset_name = dataset_name
 
     def __len__(self):
         return len(self.annotated_dataset)
@@ -126,24 +160,32 @@ class ValAnDatasets(Dataset):
         # element 3: ellipse annotations
         # element 4: eye-tracking heatmaps
         # element 5: mimic-cxr image-level labels
-        return  one_case[0], one_case[4], torch.tensor(1.), one_case[3], one_case[2], one_case[5]
+        
+        if self.dataset_name=='toy':
+            return  one_case[0], one_case[4], torch.tensor(1.), one_case[3], one_case[2].sum(dim = 0), one_case[5]
+        else:
+            return  one_case[0], one_case[4], torch.tensor(1.), one_case[3], one_case[2], one_case[5]
 
 # function to get a dataset that includes unannotated images and anottated images in the same dataset
-def get_together_dataset(split, type_, use_et, batch_size, crop, use_data_aug, num_workers, percentage_annotated, percentage_unannotated, repeat_annotated, load_to_memory,data_aug_seed, index_produce_val_image, grid_size, dataset_type_et):
+def get_together_dataset(split, type_, use_et, batch_size, crop, use_data_aug, num_workers, percentage_annotated, percentage_unannotated, repeat_annotated, load_to_memory,data_aug_seed, index_produce_val_image, grid_size, dataset_type_et, sequence_model, dataset_name, type_toy, calculate_label_specific_heatmaps):
     original_split = split.split('_')[0]
     
     # 'trainval' is used to pass the training set through the same calculations as the validation set
     # In that case, get_dataset_split=='train' and original_split=='val'
     get_dataset_split = 'train' if original_split=='trainval' else original_split
     
-    annotated_part = get_dataset_et(get_dataset_split, data_aug_seed, grid_size=grid_size, use_et = use_et, use_data_aug = use_data_aug, crop = crop, load_to_memory = load_to_memory, dataset_type = dataset_type_et)
-    unannotated_part = get_dataset_mimic(get_dataset_split, data_aug_seed, use_data_aug = use_data_aug, crop = crop)
+    if dataset_name=='toy':
+        annotated_part = get_toy_dataset(get_dataset_split, data_aug_seed, grid_size=grid_size, use_et = use_et, use_data_aug = use_data_aug, crop = crop, load_to_memory = load_to_memory, dataset_type = dataset_type_et, sequence_model = sequence_model, annotated = True, type_toy = type_toy)
+        unannotated_part = get_toy_dataset(get_dataset_split, data_aug_seed, grid_size=grid_size, use_et = use_et, use_data_aug = use_data_aug, crop = crop, load_to_memory = load_to_memory, dataset_type = dataset_type_et, sequence_model = sequence_model, annotated = False, type_toy = type_toy)
+    else:
+        annotated_part = get_dataset_et(get_dataset_split, data_aug_seed, grid_size=grid_size, use_et = use_et, use_data_aug = use_data_aug, crop = crop, load_to_memory = load_to_memory, dataset_type = dataset_type_et, sequence_model = sequence_model, calculate_label_specific_heatmaps = calculate_label_specific_heatmaps)
+        unannotated_part = get_dataset_mimic(get_dataset_split, data_aug_seed, use_data_aug = use_data_aug, crop = crop)
     if original_split=='train':
         annotated_part = ReduceDataset(annotated_part, percentage_annotated)
         unannotated_part = ReduceDataset(unannotated_part, percentage_unannotated)
         print(len(annotated_part))
         print(len(unannotated_part))
-        
+    
     # if repeat annotated is True, the datasets, instead of concatenated, are sampled independently
     # with the length of the unannotated dataset dictating the length of an epoch, and the unannotated dataset
     # repeating several times in the same epoch. The number of samples from each of these two datasets is the same
@@ -151,29 +193,29 @@ def get_together_dataset(split, type_, use_et, batch_size, crop, use_data_aug, n
     if repeat_annotated:
         assert(original_split=='train')
         assert(type_=='ua')
-        annotated_part = JoinDatasetsAnotatedUnannotated(annotated_part, Len0Dataset(), use_et = use_et, grid_size = grid_size)
-        unannotated_part = JoinDatasetsAnotatedUnannotated(Len0Dataset(), unannotated_part, use_et = use_et, grid_size = grid_size)
+        annotated_part = JoinDatasetsAnotatedUnannotated(annotated_part, Len0Dataset(), use_et = use_et, grid_size = grid_size, sequence_model = sequence_model)
+        unannotated_part = JoinDatasetsAnotatedUnannotated(Len0Dataset(), unannotated_part, use_et = use_et, grid_size = grid_size, sequence_model = sequence_model)
         return IteratorLoaderDifferentSizesSameBatch(
-            [return_dataloaders(lambda: annotated_part, original_split, batch_size = int(batch_size/2), num_workers=int(num_workers/2), index_produce_val_image = index_produce_val_image),
-            return_dataloaders(lambda: unannotated_part, original_split, batch_size = int(batch_size/2), num_workers=int(num_workers/2), index_produce_val_image = index_produce_val_image)],
+            [return_dataloaders(lambda: annotated_part, original_split, batch_size = int(batch_size/2), num_workers=int(num_workers/2), index_produce_val_image = index_produce_val_image, collate_fn = pad_collate_fn if sequence_model else None),
+            return_dataloaders(lambda: unannotated_part, original_split, batch_size = int(batch_size/2), num_workers=int(num_workers/2), index_produce_val_image = index_produce_val_image, collate_fn = pad_collate_fn if sequence_model else None)],
             math.ceil(len(unannotated_part)/batch_size*2))
     else:
         if split.split('_')[0]=='train':
             if type_ == 'a': # if use only the annotated dataset
-                j = JoinDatasetsAnotatedUnannotated(annotated_part, Len0Dataset(), use_et = use_et, grid_size = grid_size)
+                j = JoinDatasetsAnotatedUnannotated(annotated_part, Len0Dataset(), use_et = use_et, grid_size = grid_size, sequence_model = sequence_model)
             elif type_=='u': # if use only the unannotated dataset
                 if percentage_unannotated<1: # if not using the full unannotated dataset, include the annotated images as unannotated
                     j = JoinDatasetsRemoveAnnotations(annotated_part, unannotated_part, use_et = use_et, grid_size = grid_size)
                 else:
-                    j = JoinDatasetsAnotatedUnannotated(Len0Dataset(), unannotated_part, use_et = use_et, grid_size = grid_size)
+                    j = JoinDatasetsAnotatedUnannotated(Len0Dataset(), unannotated_part, use_et = use_et, grid_size = grid_size, sequence_model = sequence_model)
             elif type_=='ua': # if use both dataset, join them
-                j = JoinDatasetsAnotatedUnannotated(annotated_part,unannotated_part, use_et = use_et, grid_size = grid_size)
+                j = JoinDatasetsAnotatedUnannotated(annotated_part,unannotated_part, use_et = use_et, grid_size = grid_size, sequence_model = sequence_model)
         else:
             #for 'test_all' or 'val_all', return the full validation mimic-cxr dataset
             if split[-4:] == '_all':
                 j = unannotated_part
             #for 'test_ann' or 'val_ann', return the annotated dataset, with the order of elements changed
             elif split[-4:] == '_ann':
-                j = ValAnDatasets(annotated_part)
+                j = ValAnDatasets(annotated_part, dataset_name)
         
-        return return_dataloaders(lambda: j, original_split, batch_size = batch_size, num_workers=num_workers, index_produce_val_image = index_produce_val_image)
+        return return_dataloaders(lambda: j, original_split, batch_size = batch_size, num_workers=num_workers, index_produce_val_image = index_produce_val_image, collate_fn = pad_collate_fn if (sequence_model and get_dataset_split=='train') else None)

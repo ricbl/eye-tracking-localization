@@ -328,6 +328,7 @@ class H5Dataset(Dataset):
         load_to_memory_file = path + '/' + filename + '_load_to_memory.pkl'
         length_file = path + '/' + filename + '_length.pkl'
         
+        
         # creating a representation of the format of each case of the dataset
         if not os.path.exists(structure_file):
             if first_element is None:
@@ -380,8 +381,9 @@ class H5Dataset(Dataset):
                             'individual_dataset':individual_datasets, 
                             'preprocessing_function':preprocessing_functions}) , 
                         h5f, self.len_)
+                    
                     if n_processes == 0:
-                        for index in range(self.len_): 
+                        for index in range(self.len_):
                             element = original_dataset[index]
                             print(f'{index}/{self.len_}')
                             self.pack_h5(H5Dataset.join_structures(
@@ -389,13 +391,16 @@ class H5Dataset(Dataset):
                                     'individual_dataset':individual_datasets, 
                                     'preprocessing_function':preprocessing_functions}),
                                  index, h5f)
+                            del element
+                            gc.collect()
                     else:
+                        
                         indices_iterations = np.arange(len(original_dataset))
                         manager = multiprocessing.Manager()
                         
                         for indices_batch in [indices_iterations[i:i + n_processes*batch_multiplier] for i in range(0, len(indices_iterations), n_processes*batch_multiplier)]:
-                            numpys = manager.list([original_dataset])
-                            elements = Parallel(n_jobs=n_processes, batch_size = 1)(delayed(get_one_sample)(list_index,element_index, numpys) for list_index, element_index in enumerate(indices_batch))
+                            # numpys = manager.list([original_dataset])
+                            elements = Parallel(n_jobs=n_processes, batch_size = 1, require='sharedmem')(delayed(get_one_sample)(list_index,element_index, [original_dataset]) for list_index, element_index in enumerate(indices_batch))
                             for element_index, index in enumerate(indices_batch): 
                                 self.pack_h5(H5Dataset.join_structures(
                                         {'structure':elements[element_index],
@@ -403,8 +408,8 @@ class H5Dataset(Dataset):
                                         'preprocessing_function':preprocessing_functions}),
                                      index, h5f)
                             del elements
-                            numpys[:] = []
-                            del numpys
+                            # numpys[:] = []
+                            # del numpys
                             gc.collect()
             except Exception as err:
                 # if there is an error in the middle of writing, delete the generated files

@@ -9,7 +9,7 @@ def get_table(folder_runs):
     for _, dirnames, _ in os.walk(folder_runs):
         folders += dirnames
         break
-
+    
     table = pd.DataFrame()
     for folder in folders:
         current_epoch = -1
@@ -27,11 +27,11 @@ def get_table(folder_runs):
                 elif line.split(':')[1]=='root' and current_epoch>-1 and len(line.split(':'))>3: 
                     metric = line.split(':')[2]
                     if line.split(':')[3][:7]==' tensor':
-                        value = float(line.split(':')[3][8:line.split(':')[3].index(',')])
+                        value = float(line.split(':')[3][8:line.split(':')[3].index(')')])
                     else:
                         value = float(line.split(':')[3])
                     values_gathered[metric] = value
         values_gathered['folder'] = folder
         table = table.append(pd.DataFrame( values_gathered, index = [0]))
         lines.close()
-    table.to_csv('./table_summary_results.csv')
+    table.to_csv(f'./table_summary_results_{folder_runs.replace("/", "|")}.csv')

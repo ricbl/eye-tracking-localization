@@ -5,6 +5,9 @@ import numpy as np
 from .list_labels import list_labels as label_names
 import time
 
+groups_for_each_index = [None,1,0,0,1,1,1,3,2,2]
+groups_indices = [[0,0,1,1,0,0,0,0,0,0],[0,1,0,0,1,1,1,0,0,0],[0,0,0,0,0,0,0,0,1,1],[0,0,0,0,0,0,0,1,0,0]]
+
 class Metrics():
     def __init__(self, threshold_ior, calculate_auc):
         self.values = collections.defaultdict(list)
@@ -52,11 +55,18 @@ class Metrics():
                 y_true = np.array(self.values['y_true_' + suffix])
                 y_predicted = np.array( self.values['y_predicted_' + suffix])
                 auc_average = []
+                grouped_y_true = collections.defaultdict(list)
+                grouped_y_predicted = collections.defaultdict(list)
                 for i in range(y_true.shape[1]):
                     if (y_true[:,i]>0).any():
                         # calculate the auc by inputting all predicted and groundtruth values of each label into the roc_auc_score function
                         self.average['score_' + label_names[i].replace(' ','_') + '_' + suffix] = roc_auc_score(y_true[:,i], y_predicted[:,i])
                         auc_average.append(self.average['score_' + label_names[i].replace(' ','_') + '_' + suffix])
+                        if groups_for_each_index[i] is not None:
+                            grouped_y_true[groups_for_each_index[i]].append(y_true[:,i])
+                            grouped_y_predicted[groups_for_each_index[i]].append(y_predicted[:,i])
+                for key in grouped_y_true:
+                    self.average['auc_group_' + str(key) + '_' + suffix] = roc_auc_score(np.max(grouped_y_true[key], axis = 0), np.max(grouped_y_predicted[key], axis = 0))
                 # calculate teh average AUC by averaging the AUC of all labels
                 self.average['auc_average_' + suffix] = sum(auc_average)/len(auc_average)
         
