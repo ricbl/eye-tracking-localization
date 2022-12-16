@@ -14,11 +14,12 @@ This repository contains code for the paper ["Localization supervision of chest 
 - matplotlib==3.5.0
 - numpy==1.21.2
 - pandas==1.3.5
-- Pillow==8.4.0
+- pillow==8.4.0
 - scikit-image==0.18.3
 - scikit-learn==1.0.2
 - scipy==1.6.2
 - tensorboardX==2.2
+- pydicom==2.3.0
 - torch==1.10.2
 - torchvision==0.11.3
 
