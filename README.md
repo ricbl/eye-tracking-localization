@@ -1,6 +1,6 @@
 # Localization supervision of chest x-ray classifiers using label-specific eye-tracking annotation
 
-This repository contains code for the paper ["Localization supervision of chest x-ray classifiers using label-specific eye-tracking annotation"](). This paper proposes a procedure for training deep learning models using eye-tracking data. This procedure uses timestamps from CXR reports and eye-tracking data to extract label-specific localization information. The use of this information then improves the interpretability of the tested models, as measured by the task of abnormality localization. The eye-tracking data and CXR reports were sourced from the [REFLACX dataset](https://www.physionet.org/content/reflacx-xray-localization/1.0.0/), and the CXR images were sourced from the [MIMIC-CXR-JPG dataset](https://physionet.org/content/mimic-cxr-jpg/2.0.0/).
+This repository contains code for the paper ["Localization supervision of chest x-ray classifiers using label-specific eye-tracking annotation"](https://arxiv.org/abs/2207.09771). This paper proposes a procedure for training deep learning models using eye-tracking data. This procedure uses timestamps from CXR reports and eye-tracking data to extract label-specific localization information. The use of this information then improves the interpretability of the tested models, as measured by the task of abnormality localization. The eye-tracking data and CXR reports were sourced from the [REFLACX dataset](https://www.physionet.org/content/reflacx-xray-localization/1.0.0/), and the CXR images were sourced from the [MIMIC-CXR-JPG dataset](https://physionet.org/content/mimic-cxr-jpg/2.0.0/).
 
 ## Prerequisites
 
@@ -22,6 +22,7 @@ This repository contains code for the paper ["Localization supervision of chest 
 - pydicom==2.3.0
 - torch==1.10.2
 - torchvision==0.11.3
+- opencv==4.5.1
 
 3. Install the library containing the class that stores datasets into HDF5 files: 
 ```
@@ -59,28 +60,25 @@ This repository contains code for the paper ["Localization supervision of chest 
 To train each of the models from the paper, use:
 - for the Unannotated model:
 
-    `python -m src.train --gpus=0 --experiment=unannotated_baseline --dataset_type=u`;
+    `python -m src.train --gpus=0 --experiment=unannotated_baseline --last_layer 3 4 --grid_size=32 --use_grid_balancing_loss=true --weight_decay=1e-5 --unet=true --gamma_unet=300 --weight_loss_annotated=3 --dataset_type=u`;
 
 - for the Ellipses model: 
 
-    `python -m src.train --gpus=0 --experiment=ellipses_baseline --use_et=false`
+    `python -m src.train --gpus=0 --experiment=ellipses_baseline --last_layer 3 4 --grid_size=32 --use_grid_balancing_loss=true --weight_decay=1e-5 --unet=true --gamma_unet=300 --weight_loss_annotated=3 --use_et=False`
 
 (for training the models using only 50% or 25% of the dataset annotated with ellipses, add ` --percentage_annotated=0.5` or ` --percentage_annotated=0.25` to the command above);
 
 - for the ET model (ours): 
 
-    `python -m src.train --gpus=0 --experiment=et_data_model`.
-
-One pre-trained model for each method is provided [here](). 
-
+    `python -m src.train --gpus=0 --experiment=et_data_model --last_layer 3 4 --grid_size=32 --use_grid_balancing_loss=true --weight_decay=1e-5 --unet=true --gamma_unet=300 --weight_loss_annotated=3 --use_et=True`.
 
 ## Evaluating
 
 For getting the AUC and IoU values as reported in the paper, run two validation runs for each of the training experiments, one for the validation split and one for the test split:
 
-- `python -m src.train --skip_train=true --nepochs=1 --load_checkpoint_d=<path to experiment folder>/state_dict_d_best_epoch --batch_size=8 --num_workers=4 --experiment=<experiment name> --gpus=0 --calculate_cam=true --split_validation=val`
+- `python -m src.train --skip_train=true --nepochs=1 --load_checkpoint_d=<path to experiment folder>/state_dict_d_best_epoch --batch_size=8 --last_layer 3 4 --grid_size=32 --unet=True --num_workers=4 --experiment=<experiment name> --gpus=0 --calculate_cam=true --use_grid_balancing_loss=true --split_validation=val`
 
-- `python -m src.train --skip_train=true --nepochs=1 --load_checkpoint_d=<path to experiment folder>/state_dict_d_best_epoch --batch_size=8 --num_workers=4 --experiment=<experiment name> --gpus=0 --calculate_cam=true --split_validation=test`
+- `python -m src.train --skip_train=true --nepochs=1 --load_checkpoint_d=<path to experiment folder>/state_dict_d_best_epoch --batch_size=8 --last_layer 3 4 --grid_size=32 --unet=True --num_workers=4 --experiment=<experiment name> --gpus=0 --calculate_cam=true --use_grid_balancing_loss=true --split_validation=test`
 
 Then, put all folders from these evaluation runs in split-separated folders (`val/` and `test/`) and run 
 
@@ -88,18 +86,37 @@ Then, put all folders from these evaluation runs in split-separated folders (`va
 
 Result tables, formatted as used in LaTeX, will be written to the files `Table2.txt`, `Table3.txt`, and `Table4.txt`.
 
-For the [provided trained models](), the average AUC and IoU results are:
+The average AUC and IoU results are:
 
 | Metric      | Unannotated | Ellipses | ET model (ours) |
 | --- | --- | --- | --- |
-| AUC | 0.770 | 0.764 | 0.763 | 
-| IoU | 0.172 | 0.221 | 0.202 |
-
-For the average of five models and per-label results, check the [paper]().
+| AUC | 0.767 | 0.765 | 0.765 | 
+| IoU | 0.201 | 0.335 | 0.256 |
 
 Numbers for the other tables from the paper can be shown in the command line using:
 - Table 1: `python -m src.evaluate_chexpert`;
 - Table S2: `python -m src.eyetracking_dataset` and `python -m src.mimic_dataset`.
+
+### Ablation
+
+We present below how to get the numbers of the rows of the ablation study table that have at least one part removed from the method:
+
+| Row      | Label Specific Heatmap | Balanced Range Normalization | Multi-Resolution Architecture | Multi-Task Learning |
+| --- | --- | --- | --- | --- |
+| 1 | &#9744; | &#9744; | &#9744; | &#9744; | &#9744; | 
+| 2 | &#9745; | &#9744; | &#9744; | &#9744; |
+| 3 | &#9745; | &#9745; | &#9744; | &#9744; |
+| 4 | &#9745; | &#9745; | &#9745; | &#9744; |
+| 5 | &#9744; | &#9745; | &#9745; | &#9745; |
+
+Training commands:
+- Row 1: `python -m src.train --experiment=ablation_row_1 --gpus=0 --last_layer 4 --grid_size=16 --use_grid_balancing_loss=false --weight_decay=1e-5 --unet=false --gamma_unet=300 --weight_loss_annotated=3 --use_et=True --calculate_label_specific_heatmaps=False`
+- Row 2: `python -m src.train --gpus=0 --experiment=ablation_row_2 --last_layer 4 --grid_size=16 --use_grid_balancing_loss=false --weight_decay=1e-5 --unet=false --gamma_unet=300 --weight_loss_annotated=3 --use_et=True`
+- Row 3: `python -m src.train --experiment=ablation_row_3 --gpus=0 --last_layer 4 --grid_size=16 --use_grid_balancing_loss=true --weight_decay=1e-5 --unet=false --gamma_unet=300 --weight_loss_annotated=3 --use_et=True`
+- Row 4: `python -m src.train --experiment=ablation_row_4 --gpus=0 --last_layer 3 4 --grid_size=32 --use_grid_balancing_loss=true --weight_decay=1e-5 --unet=false --gamma_unet=300 --weight_loss_annotated=3 --use_et=True`
+- Row 5: `python -m src.train --experiment=ablation_row_5 --gpus=0 --last_layer 3 4 --grid_size=32 --use_grid_balancing_loss=true --weight_decay=1e-5 --unet=true --gamma_unet=300 --weight_loss_annotated=3 --use_et=True --calculate_label_specific_heatmaps=false`
+
+Validation/testing commands: make the same changes as done for the training commands.
 
 ## Images
 
